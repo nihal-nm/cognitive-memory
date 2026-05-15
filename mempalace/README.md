@@ -23,6 +23,9 @@ Critical distinction between embedding model (all-MiniLM-L6-v2, required, 90MB, 
 ### [ARCHITECTURE_IDENTITY_AUTH.md](ARCHITECTURE_IDENTITY_AUTH.md)
 Identity and authorization propagation from user through Claude Code to storage. Documents single-user trust model, provenance tracking (added_by, filed_at), WAL audit trail, filesystem permissions, attack surfaces, and privacy implications.
 
+### [ARCHITECTURE_GEMMA4_LLM_IMPLEMENTATION.md](ARCHITECTURE_GEMMA4_LLM_IMPLEMENTATION.md)
+Deep technical dive into gemma4:e4b LLM implementation with code references. Covers provider abstraction, three LLM operations (corpus origin, entity refinement, closet generation), privacy safeguards, error handling, and performance characteristics.
+
 ---
 
 ## Reading Order
@@ -48,3 +51,8 @@ Identity and authorization propagation from user through Claude Code to storage.
 1. [ARCHITECTURE_IDENTITY_AUTH.md](ARCHITECTURE_IDENTITY_AUTH.md) (complete security model)
 2. [ARCHITECTURE_LLM_USAGE.md](ARCHITECTURE_LLM_USAGE.md) (external API warnings)
 3. [ARCHITECTURE_MCP_INTERACTION.md](ARCHITECTURE_MCP_INTERACTION.md) (input sanitization)
+
+**For LLM integration developers:**
+1. [ARCHITECTURE_EMBEDDING_VS_LLM.md](ARCHITECTURE_EMBEDDING_VS_LLM.md) (understand the distinction first)
+2. [ARCHITECTURE_LLM_USAGE.md](ARCHITECTURE_LLM_USAGE.md) (high-level overview of three operations)
+3. [ARCHITECTURE_GEMMA4_LLM_IMPLEMENTATION.md](ARCHITECTURE_GEMMA4_LLM_IMPLEMENTATION.md) (detailed code walkthrough with line references)
