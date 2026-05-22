@@ -1,0 +1,863 @@
+syntax = "proto3";
+package memory.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option java_multiple_files = true;
+option java_package = "io.github.chirino.memory.grpc.v1";
+option go_package = "github.com/chirino/memory-service/internal/generated/pb";
+
+// UUID fields are represented as 16-byte big-endian binary values.
+// Use the most significant 64 bits first, then least significant 64 bits.
+// Example conversion (Java):
+//   ByteBuffer buffer = ByteBuffer.allocate(16);
+//   buffer.putLong(uuid.getMostSignificantBits());
+//   buffer.putLong(uuid.getLeastSignificantBits());
+//   return buffer.array();
+
+message PageRequest {
+  string page_token = 1;
+  int32 page_size = 2;
+}
+
+message PageInfo {
+  string next_page_token = 1;
+}
+
+// ConversationListMode controls which conversations are returned from each fork tree.
+// Conversations can be forked to create branches. All forks share the same
+// "conversation group" (fork tree). This mode determines which conversations
+// from each fork tree are included in list results.
+enum ConversationListMode {
+  // Unspecified defaults to LATEST_FORK.
+  CONVERSATION_LIST_MODE_UNSPECIFIED = 0;
+  // Include all conversations the user can access (roots and forks).
+  ALL = 1;
+  // Only include root conversations (conversations that are not forks).
+  ROOTS = 2;
+  // Include only the most recently updated conversation per fork tree (default).
+  // This is useful for showing a single representative conversation from each tree.
+  LATEST_FORK = 3;
+}
+
+enum ConversationAncestryFilter {
+  CONVERSATION_ANCESTRY_FILTER_UNSPECIFIED = 0;
+  CONVERSATION_ANCESTRY_FILTER_ROOTS = 1;
+  CONVERSATION_ANCESTRY_FILTER_CHILDREN = 2;
+  CONVERSATION_ANCESTRY_FILTER_ALL = 3;
+}
+
+enum ArchiveFilter {
+  ARCHIVE_FILTER_UNSPECIFIED = 0;
+  ARCHIVE_FILTER_EXCLUDE = 1;
+  ARCHIVE_FILTER_INCLUDE = 2;
+  ARCHIVE_FILTER_ONLY = 3;
+}
+
+enum EventScope {
+  EVENT_SCOPE_UNSPECIFIED = 0;
+  EVENT_SCOPE_AUTHORIZED = 1;
+  EVENT_SCOPE_ADMIN = 2;
+}
+
+enum AccessLevel {
+  ACCESS_LEVEL_UNSPECIFIED = 0;
+  OWNER = 1;
+  MANAGER = 2;
+  WRITER = 3;
+  READER = 4;
+}
+
+enum Channel {
+  CHANNEL_UNSPECIFIED = 0;
+  HISTORY = 1;
+  CONTEXT = 2;
+}
+
+message ConversationSummary {
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  string title = 2;
+  string owner_user_id = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  string last_message_preview = 6;
+  AccessLevel access_level = 7;
+  bytes started_by_conversation_id = 8;
+  bytes started_by_entry_id = 9;
+  bool archived = 10;
+}
+
+message ChildConversationSummary {
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  string title = 2;
+  string owner_user_id = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  string last_message_preview = 6;
+  AccessLevel access_level = 7;
+  bytes started_by_entry_id = 8;
+  bool archived = 9;
+}
+
+message Conversation {
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  string title = 2;
+  string owner_user_id = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  string last_message_preview = 6;
+  AccessLevel access_level = 7;
+  reserved 8; // conversation_group_id removed
+  // First parent entry excluded by this fork (empty if root or blank-slate fork)
+  bytes forked_at_entry_id = 9;
+  // Conversation ID from which this was forked (empty if root)
+  bytes forked_at_conversation_id = 10;
+  bytes started_by_conversation_id = 11;
+  bytes started_by_entry_id = 12;
+  string agent_id = 13;
+  bool archived = 14;
+}
+
+message ConversationMembership {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  string user_id = 2;
+  AccessLevel access_level = 3;
+  string created_at = 4;
+  reserved 5; // old conversation_group_id field number
+}
+
+message ConversationForkSummary {
+  // Forked conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  reserved 2; // conversation_group_id removed
+  // First parent entry excluded by this fork
+  bytes forked_at_entry_id = 3;
+  // Conversation ID from which this was forked
+  bytes forked_at_conversation_id = 4;
+  string title = 5;
+  string created_at = 6;
+}
+
+message CreateConversationRequest {
+  string title = 1;
+  google.protobuf.Struct metadata = 2;
+  optional string agent_id = 3;
+}
+
+message ListConversationsRequest {
+  // Controls which conversations are returned from each fork tree.
+  // See ConversationListMode for details on each mode.
+  ConversationListMode mode = 1;
+  // Optional text query for basic title/metadata search.
+  string query = 2;
+  PageRequest page = 3;
+  ConversationAncestryFilter ancestry = 4;
+  ArchiveFilter archived = 5;
+}
+
+message ListConversationsResponse {
+  repeated ConversationSummary conversations = 1;
+  PageInfo page_info = 2;
+}
+
+message GetConversationRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+}
+
+message UpdateConversationRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  optional string title = 2;
+  optional bool archived = 3;
+}
+
+message ListForksRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  PageRequest page = 2;
+}
+
+message ListForksResponse {
+  repeated ConversationForkSummary forks = 1;
+  PageInfo page_info = 2;
+}
+
+message ListChildConversationsRequest {
+  bytes conversation_id = 1;
+  PageRequest page = 2;
+}
+
+message ListChildConversationsResponse {
+  repeated ChildConversationSummary conversations = 1;
+  PageInfo page_info = 2;
+}
+
+message CreateEntryRequest {
+  string user_id = 1;
+  Channel channel = 2;
+  reserved 3; // epoch removed - server auto-calculates epoch for context channel entries
+  // Describes the schema/format of the content array.
+  // History channel entries must use "history" as the content_type.
+  // The content array for history entries must contain exactly 1 object with:
+  //   - text (string): The message text.
+  //   - role (string): Either "USER" or "AI".
+  // Other content_types (e.g., "LC4J", "SpringAI") may be used for
+  // agent context entries.
+  string content_type = 4;
+  // For history channel entries (content_type: "history"), each block
+  // contains text and role fields.
+  repeated google.protobuf.Value content = 5;
+  // Optional text to index for search (history channel only)
+  optional string indexed_content = 6;
+  // Fork metadata: if the target conversation doesn't exist yet, auto-create
+  // it as a fork of forked_at_conversation_id. Optionally provide
+  // forked_at_entry_id to fork at a specific point. When unset, all source
+  // entries are excluded and the new entry become the first entry in the fork.
+  optional bytes forked_at_conversation_id = 7;  // UUID as 16-byte big-endian
+  optional bytes forked_at_entry_id = 8;          // UUID as 16-byte big-endian
+  optional string agent_id = 9;
+  optional bytes started_by_conversation_id = 10;
+  optional bytes started_by_entry_id = 11;
+}
+
+message SyncEntriesRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  // Single entry containing all messages in the agent's context.
+  // The content array holds all messages; comparison is done against
+  // the flattened content of existing entries in the latest epoch.
+  CreateEntryRequest entry = 2;
+}
+
+message SyncEntriesResponse {
+  optional int64 epoch = 1;
+  bool no_op = 2;
+  bool epoch_incremented = 3;
+  // The entry that was appended during this sync, or empty if no-op.
+  optional Entry entry = 4;
+}
+
+message AppendEntryRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  CreateEntryRequest entry = 2;
+}
+
+message ListEntriesRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  Channel channel = 2;
+  string epoch_filter = 3;
+  PageRequest page = 4;
+  // Controls which fork entries to include: "none" (default) follows ancestry,
+  // "all" returns entries from all forks in the conversation group
+  string forks = 5;
+}
+
+message ListEntriesResponse {
+  repeated Entry entries = 1;
+  PageInfo page_info = 2;
+}
+
+message Entry {
+  // Unique identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 2;
+  string user_id = 3;
+  Channel channel = 4;
+  int64 epoch = 5;
+  // Describes the schema/format of the content array.
+  // History channel entries must use "history" as the content_type.
+  // The content array for history entries contains objects with:
+  //   - text (string): The message text.
+  //   - role (string): Either "USER" or "AI".
+  // Other content_types (e.g., "LC4J", "SpringAI") may be used for
+  // agent context entries.
+  string content_type = 6;
+  // For history channel entries (content_type: "history"), each block
+  // contains text and role fields.
+  repeated google.protobuf.Value content = 7;
+  string created_at = 8;
+}
+
+message ListMembershipsRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  PageRequest page = 2;
+}
+
+message ListMembershipsResponse {
+  repeated ConversationMembership memberships = 1;
+  PageInfo page_info = 2;
+}
+
+message ShareConversationRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  string user_id = 2;
+  AccessLevel access_level = 3;
+}
+
+message UpdateMembershipRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  string member_user_id = 2;
+  AccessLevel access_level = 3;
+}
+
+message DeleteMembershipRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  string member_user_id = 2;
+}
+
+// Ownership Transfer messages
+message OwnershipTransfer {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 2;
+  string conversation_title = 3;
+  string from_user_id = 4;
+  string to_user_id = 5;
+  string created_at = 6;
+}
+
+enum TransferRole {
+  TRANSFER_ROLE_UNSPECIFIED = 0;
+  SENDER = 1;
+  RECIPIENT = 2;
+}
+
+message ListOwnershipTransfersRequest {
+  TransferRole role = 1;
+  PageRequest page = 2;
+}
+
+message ListOwnershipTransfersResponse {
+  repeated OwnershipTransfer transfers = 1;
+  PageInfo page_info = 2;
+}
+
+message GetOwnershipTransferRequest {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes transfer_id = 1;
+}
+
+message CreateOwnershipTransferRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  string new_owner_user_id = 2;
+}
+
+message AcceptOwnershipTransferRequest {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes transfer_id = 1;
+}
+
+message DeleteOwnershipTransferRequest {
+  // Transfer identifier (UUID as 16-byte big-endian binary)
+  bytes transfer_id = 1;
+}
+
+message SearchEntriesRequest {
+  string query = 1;
+  // Cursor for pagination; returns items after this result
+  string after = 2;
+  // Maximum number of results to return (default 20)
+  int32 limit = 3;
+  // Whether to include the full entry in results. Defaults to true.
+  optional bool include_entry = 4;
+}
+
+message SearchEntriesResponse {
+  repeated SearchResult results = 1;
+  string next_cursor = 2;
+}
+
+message SearchResult {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  // Title of the conversation containing this entry
+  string conversation_title = 2;
+  // Entry identifier (UUID as 16-byte big-endian binary). Always present for deep-linking.
+  bytes entry_id = 3;
+  float score = 4;
+  string highlights = 5;
+  // The matched entry. Only included when include_entry is true in the request.
+  Entry entry = 6;
+}
+
+// Index entries request - flat array of entries to index
+message IndexConversationsRequest {
+  repeated IndexEntryRequest entries = 1;
+}
+
+message IndexEntryRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  // Entry identifier (UUID as 16-byte big-endian binary)
+  bytes entry_id = 2;
+  // The searchable text for this entry
+  string indexed_content = 3;
+}
+
+message IndexConversationsResponse {
+  // Number of entries processed
+  int32 indexed = 1;
+}
+
+// List unindexed entries - for batch indexing discovery
+message ListUnindexedEntriesRequest {
+  int32 limit = 1;
+  optional string cursor = 2;
+}
+
+message ListUnindexedEntriesResponse {
+  repeated UnindexedEntry entries = 1;
+  // Cursor for next page, absent when no more results
+  optional string cursor = 2;
+}
+
+message UnindexedEntry {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  Entry entry = 2;
+}
+
+// Episodic memory messages
+message PutMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+  google.protobuf.Struct value = 3;
+  int32 ttl_seconds = 4;
+  map<string, string> index = 5;
+  optional int64 expected_revision = 6;
+  optional RequestActor actor = 7;
+}
+
+message MemoryWriteResult {
+  // Memory identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  repeated string namespace = 2;
+  string key = 3;
+  optional google.protobuf.Struct attributes = 4;
+  string created_at = 5;
+  optional string expires_at = 6;
+  int64 revision = 7;
+}
+
+message GetMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+  bool include_usage = 3;
+  ArchiveFilter archived = 4;
+  optional RequestActor actor = 5;
+}
+
+message UpdateMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+  optional bool archived = 3;
+  optional int64 expected_revision = 4;
+  optional RequestActor actor = 5;
+}
+
+message MemoryItem {
+  // Memory identifier (UUID as 16-byte big-endian binary)
+  bytes id = 1;
+  repeated string namespace = 2;
+  string key = 3;
+  google.protobuf.Struct value = 4;
+  optional google.protobuf.Struct attributes = 5;
+  optional double score = 6;
+  string created_at = 7;
+  optional string expires_at = 8;
+  optional MemoryUsage usage = 9;
+  bool archived = 10;
+  int64 revision = 11;
+}
+
+message SearchMemoriesRequest {
+  repeated string namespace_prefix = 1;
+  string query = 2;
+  optional google.protobuf.Struct filter = 3;
+  int32 limit = 4;
+  reserved 5;
+  bool include_usage = 6;
+  ArchiveFilter archived = 7;
+  optional RequestActor actor = 9;
+}
+
+message SearchMemoriesResponse {
+  repeated MemoryItem items = 1;
+}
+
+message ListMemoryNamespacesRequest {
+  repeated string prefix = 1;
+  repeated string suffix = 2;
+  int32 max_depth = 3;
+  ArchiveFilter archived = 4;
+  optional RequestActor actor = 5;
+}
+
+message RequestActor {
+  optional string on_behalf_of_user_id = 1;
+}
+
+message MemoryNamespace {
+  repeated string segments = 1;
+}
+
+message ListMemoryNamespacesResponse {
+  repeated MemoryNamespace namespaces = 1;
+}
+
+message MemoryIndexStatusResponse {
+  int64 pending = 1;
+}
+
+message MemoryUsage {
+  int64 fetch_count = 1;
+  google.protobuf.Timestamp last_fetched_at = 2;
+}
+
+message GetMemoryUsageRequest {
+  repeated string namespace = 1;
+  string key = 2;
+}
+
+enum MemoryUsageSort {
+  MEMORY_USAGE_SORT_UNSPECIFIED = 0;
+  FETCH_COUNT = 1;
+  LAST_FETCHED_AT = 2;
+}
+
+message ListTopMemoryUsageRequest {
+  repeated string prefix = 1;
+  MemoryUsageSort sort = 2;
+  int32 limit = 3;
+}
+
+message TopMemoryUsageItem {
+  repeated string namespace = 1;
+  string key = 2;
+  MemoryUsage usage = 3;
+}
+
+message ListTopMemoryUsageResponse {
+  repeated TopMemoryUsageItem items = 1;
+}
+
+message HealthResponse {
+  string status = 1;
+}
+
+message CapabilitiesTech {
+  string store = 1;
+  string attachments = 2;
+  string cache = 3;
+  string vector = 4;
+  string event_bus = 5;
+  string embedder = 6;
+}
+
+message CapabilitiesFeatures {
+  bool outbox_enabled = 1;
+  bool semantic_search_enabled = 2;
+  bool fulltext_search_enabled = 3;
+  bool cors_enabled = 4;
+  bool management_listener_enabled = 5;
+  bool private_source_urls_enabled = 6;
+  bool s3_direct_download_enabled = 7;
+}
+
+message CapabilitiesAuth {
+  bool oidc_enabled = 1;
+  bool api_key_enabled = 2;
+  bool admin_justification_required = 3;
+}
+
+message CapabilitiesSecurity {
+  bool encryption_enabled = 1;
+  bool db_encryption_enabled = 2;
+  bool attachment_encryption_enabled = 3;
+}
+
+message CapabilitiesResponse {
+  string version = 1;
+  CapabilitiesTech tech = 2;
+  CapabilitiesFeatures features = 3;
+  CapabilitiesAuth auth = 4;
+  CapabilitiesSecurity security = 5;
+}
+
+service SystemService {
+  rpc GetHealth(google.protobuf.Empty) returns (HealthResponse);
+  rpc GetCapabilities(google.protobuf.Empty) returns (CapabilitiesResponse);
+}
+
+service ConversationsService {
+  // ListConversations returns conversations the user has access to.
+  // The mode parameter controls which conversations from each fork tree are returned.
+  // See ConversationListMode for available modes.
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  rpc CreateConversation(CreateConversationRequest) returns (Conversation);
+  rpc GetConversation(GetConversationRequest) returns (Conversation);
+  rpc UpdateConversation(UpdateConversationRequest) returns (Conversation);
+  rpc ListForks(ListForksRequest) returns (ListForksResponse);
+  rpc ListChildConversations(ListChildConversationsRequest) returns (ListChildConversationsResponse);
+}
+
+service ConversationMembershipsService {
+  rpc ListMemberships(ListMembershipsRequest) returns (ListMembershipsResponse);
+  rpc ShareConversation(ShareConversationRequest) returns (ConversationMembership);
+  rpc UpdateMembership(UpdateMembershipRequest) returns (ConversationMembership);
+  rpc DeleteMembership(DeleteMembershipRequest) returns (google.protobuf.Empty);
+}
+
+service OwnershipTransfersService {
+  // List pending ownership transfers for the current user
+  rpc ListOwnershipTransfers(ListOwnershipTransfersRequest) returns (ListOwnershipTransfersResponse);
+  // Get a specific ownership transfer
+  rpc GetOwnershipTransfer(GetOwnershipTransferRequest) returns (OwnershipTransfer);
+  // Create a new ownership transfer (initiates transfer to another user)
+  rpc CreateOwnershipTransfer(CreateOwnershipTransferRequest) returns (OwnershipTransfer);
+  // Accept an ownership transfer (recipient becomes owner, sender becomes manager)
+  rpc AcceptOwnershipTransfer(AcceptOwnershipTransferRequest) returns (google.protobuf.Empty);
+  // Delete/cancel an ownership transfer
+  rpc DeleteOwnershipTransfer(DeleteOwnershipTransferRequest) returns (google.protobuf.Empty);
+}
+
+service EntriesService {
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
+  rpc AppendEntry(AppendEntryRequest) returns (Entry);
+  rpc SyncEntries(SyncEntriesRequest) returns (SyncEntriesResponse);
+}
+
+service SearchService {
+  rpc SearchConversations(SearchEntriesRequest) returns (SearchEntriesResponse);
+  // Index conversation entries for search. Requires indexer or admin role.
+  rpc IndexConversations(IndexConversationsRequest) returns (IndexConversationsResponse);
+  // List entries needing indexing. Requires indexer or admin role.
+  rpc ListUnindexedEntries(ListUnindexedEntriesRequest) returns (ListUnindexedEntriesResponse);
+}
+
+service MemoriesService {
+  rpc PutMemory(PutMemoryRequest) returns (MemoryWriteResult);
+  rpc GetMemory(GetMemoryRequest) returns (MemoryItem);
+  rpc UpdateMemory(UpdateMemoryRequest) returns (google.protobuf.Empty);
+  rpc SearchMemories(SearchMemoriesRequest) returns (SearchMemoriesResponse);
+  rpc ListMemoryNamespaces(ListMemoryNamespacesRequest) returns (ListMemoryNamespacesResponse);
+  // Admin-only: returns count of memories with pending index synchronization.
+  rpc GetMemoryIndexStatus(google.protobuf.Empty) returns (MemoryIndexStatusResponse);
+  // Admin-only: returns usage stats for one memory key.
+  rpc GetMemoryUsage(GetMemoryUsageRequest) returns (MemoryUsage);
+  // Admin-only: returns ranked memory usage rows.
+  rpc ListTopMemoryUsage(ListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse);
+}
+
+service ResponseRecorderService {
+  // Record response content for a conversation (client streaming, unary response)
+  rpc Record(stream RecordRequest) returns (RecordResponse);
+
+  // Replay a recording of a conversation
+  rpc Replay(ReplayRequest) returns (stream ReplayResponse);
+
+  // Cancel an in-progress recording
+  rpc Cancel(CancelRecordRequest) returns (CancelRecordResponse);
+
+  // Check if response recorder is enabled
+  rpc IsEnabled(google.protobuf.Empty) returns (IsEnabledResponse);
+
+  // Check which conversations have active recordings
+  rpc CheckRecordings(CheckRecordingsRequest) returns (CheckRecordingsResponse);
+}
+
+enum RecordStatus {
+  RECORD_STATUS_UNSPECIFIED = 0;
+  RECORD_STATUS_SUCCESS = 1;
+  RECORD_STATUS_CANCELLED = 2;
+  RECORD_STATUS_ERROR = 3;
+}
+
+message RecordRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary, required in first message)
+  bytes conversation_id = 1;
+  string content = 2;          // Content chunk
+  bool complete = 3;           // Set to true in final message
+}
+
+message RecordResponse {
+  RecordStatus status = 1;
+  string error_message = 2;    // Only set when status = ERROR
+}
+
+message ReplayRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+}
+
+message ReplayResponse {
+  string content = 1;              // Content chunk
+  string redirect_address = 2;    // Set when redirect is needed (format: "host:port")
+}
+
+message CancelRecordRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+}
+
+message CancelRecordResponse {
+  bool accepted = 1;
+  string redirect_address = 2;    // Set when redirect is needed (format: "host:port")
+}
+
+message IsEnabledResponse {
+  bool enabled = 1;
+}
+
+message CheckRecordingsRequest {
+  // Conversation identifiers (UUID as 16-byte big-endian binary each)
+  repeated bytes conversation_ids = 1;
+}
+
+message CheckRecordingsResponse {
+  // Conversation IDs with active recordings (UUID as 16-byte big-endian binary each)
+  repeated bytes conversation_ids = 1;
+}
+
+service AttachmentsService {
+  // Upload a file as a stream of chunks. First message must contain metadata.
+  // Subsequent messages contain file data chunks.
+  // Server responds once the upload is complete or an error occurs.
+  rpc UploadAttachment(stream UploadAttachmentRequest) returns (UploadAttachmentResponse);
+
+  // Retrieve attachment metadata (not the file content).
+  rpc GetAttachment(GetAttachmentRequest) returns (AttachmentInfo);
+
+  // Download a file as a stream of chunks.
+  rpc DownloadAttachment(DownloadAttachmentRequest) returns (stream DownloadAttachmentResponse);
+}
+
+message UploadAttachmentRequest {
+  oneof payload {
+    // First message: upload metadata (required)
+    UploadMetadata metadata = 1;
+    // Subsequent messages: file data chunks
+    bytes chunk = 2;
+  }
+}
+
+message UploadMetadata {
+  string filename = 1;
+  string content_type = 2;
+  // ISO 8601 duration (e.g., "PT1H"). Empty = server default.
+  string expires_in = 3;
+}
+
+message UploadAttachmentResponse {
+  string id = 1;
+  string href = 2;
+  string content_type = 3;
+  string filename = 4;
+  int64 size = 5;
+  string sha256 = 6;
+  string expires_at = 7;
+}
+
+message GetAttachmentRequest {
+  string id = 1;
+}
+
+message AttachmentInfo {
+  string id = 1;
+  string href = 2;
+  string content_type = 3;
+  string filename = 4;
+  int64 size = 5;
+  string sha256 = 6;
+  string expires_at = 7;
+  string created_at = 8;
+}
+
+message DownloadAttachmentRequest {
+  string id = 1;
+}
+
+message DownloadAttachmentResponse {
+  oneof payload {
+    // First message: attachment metadata
+    AttachmentInfo metadata = 1;
+    // Subsequent messages: file data chunks
+    bytes chunk = 2;
+  }
+}
+
+service EventStreamService {
+  // Subscribe to real-time events (server streaming).
+  // Events are filtered by the caller's conversation group membership.
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream EventNotification);
+}
+
+service AdminCheckpointService {
+  rpc GetCheckpoint(GetCheckpointRequest) returns (AdminCheckpoint);
+  rpc PutCheckpoint(PutCheckpointRequest) returns (AdminCheckpoint);
+}
+
+message GetCheckpointRequest {
+  string client_id = 1;
+}
+
+message PutCheckpointRequest {
+  string client_id = 1;
+  string content_type = 2;
+  google.protobuf.Value value = 3;
+}
+
+message AdminCheckpoint {
+  string client_id = 1;
+  string content_type = 2;
+  google.protobuf.Value value = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message SubscribeEventsRequest {
+  // Optional: subscribe to specific conversation IDs only.
+  repeated bytes conversation_ids = 1;
+  // Optional: filter by event kinds (conversation, entry, response, membership).
+  repeated string kinds = 2;
+  // Optional: durable replay cursor. Omit for tail-only mode.
+  optional string after_cursor = 3;
+  // Optional: event detail mode. Supported values are "summary" and "full".
+  optional string detail = 4;
+  // Optional: event scope. Defaults to caller-authorized membership scope.
+  optional EventScope scope = 5;
+  // Optional: admin/auditor justification, logged for admin scope.
+  optional string justification = 6;
+  // Optional: entry channel filter for entry events. Defaults to ["history"].
+  repeated string entry_channels = 7;
+  // Optional: entry content type filter for entry events. Empty means any.
+  repeated string entry_content_types = 8;
+  // Optional: entry role filter for entry events. Empty means any.
+  repeated string entry_roles = 9;
+}
+
+message EventNotification {
+  // Action: created, updated, deleted, phase, evicted, invalidate
+  string event = 1;
+  // Resource type: conversation, entry, response, membership, stream
+  string kind = 2;
+  // Kind-specific payload as JSON-encoded bytes.
+  bytes data = 3;
+  // Durable replay cursor when available.
+  optional string cursor = 4;
+}
