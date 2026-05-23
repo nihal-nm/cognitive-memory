@@ -150,8 +150,19 @@ public class JobProcessor {
             LOG.infof("  [2/4] Extracting memories from evidence");
             String evidenceText = evidence.formatAsText();
             DurableExtractionResponse extraction = extractor.extract(evidenceText);
-            LOG.infof("  ✓ Extracted %d memory candidates: facts=%d, preferences=%d, procedures=%d, problemSolutions=%d, decisions=%d",
-                extraction.getTotalCount(),
+            
+            int rawTotal = extraction.getTotalCount();
+            List<MemoryCandidate> validCandidates = extraction.getAllCandidates();
+            int filteredCount = rawTotal - validCandidates.size();
+            
+            if (filteredCount > 0) {
+                LOG.warnf("  ⚠ Filtered %d invalid candidates (empty content, zero confidence, or no citations)", filteredCount);
+            }
+            
+            LOG.infof("  ✓ Extracted %d valid memory candidates (raw=%d, filtered=%d): facts=%d, preferences=%d, procedures=%d, problemSolutions=%d, decisions=%d",
+                validCandidates.size(),
+                rawTotal,
+                filteredCount,
                 extraction.facts().size(),
                 extraction.preferences().size(),
                 extraction.procedures().size(),
@@ -160,7 +171,7 @@ public class JobProcessor {
             
             // Stage 3: Verify Memories
             LOG.infof("  [3/4] Verifying memory candidates");
-            List<MemoryCandidate> allCandidates = extraction.getAllCandidates();
+            List<MemoryCandidate> allCandidates = validCandidates;
             String candidatesJson = objectMapper.writeValueAsString(allCandidates);
             DurableVerificationResponse verification = verifier.verify(candidatesJson, evidenceText);
             LOG.infof("  ✓ Verification complete: verified=%d, rejected=%d",

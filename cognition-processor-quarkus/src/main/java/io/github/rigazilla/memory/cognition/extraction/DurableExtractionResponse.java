@@ -25,6 +25,7 @@ public record DurableExtractionResponse(
     
     /**
      * Get all candidates across all types.
+     * Filters out invalid candidates (empty content, zero confidence, no citations).
      */
     public List<MemoryCandidate> getAllCandidates() {
         return List.of(
@@ -35,7 +36,20 @@ public record DurableExtractionResponse(
             decisions
         ).stream()
             .flatMap(List::stream)
+            .filter(this::isValidCandidate)
             .toList();
+    }
+    
+    /**
+     * Check if a candidate is valid for storage.
+     * Filters out LLM responses with empty content, zero confidence, or no citations.
+     */
+    private boolean isValidCandidate(MemoryCandidate candidate) {
+        return candidate.content() != null 
+            && !candidate.content().isBlank()
+            && candidate.confidence() > 0.0
+            && candidate.citations() != null
+            && !candidate.citations().isEmpty();
     }
     
     /**
