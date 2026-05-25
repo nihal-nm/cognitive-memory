@@ -1,6 +1,10 @@
 package io.github.rigazilla.memory.cognition.queue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.protobuf.ByteString;
+import io.github.chirino.memory.grpc.v1.Conversation;
+import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
+import io.github.chirino.memory.grpc.v1.GetConversationRequest;
 import io.github.rigazilla.memory.cognition.event.ScopeJob;
 import io.github.rigazilla.memory.cognition.evidence.EvidencePack;
 import io.github.rigazilla.memory.cognition.evidence.TranscriptLoader;
@@ -10,14 +14,29 @@ import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
 import io.github.rigazilla.memory.cognition.verification.DurableMemoryVerifier;
 import io.github.rigazilla.memory.cognition.verification.DurableVerificationResponse;
 import io.github.rigazilla.memory.cognition.writer.MemoryWriter;
+import io.grpc.CallOptions;
+import io.grpc.Channel;
+import io.grpc.ClientCall;
+import io.grpc.ClientInterceptor;
+import io.grpc.ForwardingClientCall;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.Metadata;
+import io.grpc.MethodDescriptor;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ManagedContext;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 
@@ -25,86 +44,154 @@ import java.util.concurrent.Executors;
  * Processes jobs from conversation queues on virtual threads.
  * Ensures singleton processing per conversation: only one job processes at a time.
  * Multiple conversations can process in parallel via separate virtual threads.
- * 
+ *
  * Pipeline stages:
+ * 0. Load conversation metadata (to get owner user ID)
  * 1. Load evidence (transcript entries)
  * 2. Extract memory candidates (all 5 types in one LLM call)
  * 3. Verify candidates (check citations)
  * 4. Write verified memories to memory-service
+ *
+ * Note: Memories are written to namespace ["user", <conversation_owner>, "cognition.v1", <memory_type>]
+ *       where conversation_owner is the owner_user_id from the Conversation metadata.
  */
 @ApplicationScoped
 public class JobProcessor {
-    
+
     private static final Logger LOG = Logger.getLogger(JobProcessor.class);
-    
+
+    @ConfigProperty(name = "memory-service.grpc.host")
+    String grpcHost;
+
+    @ConfigProperty(name = "memory-service.grpc.port")
+    int grpcPort;
+
+    @ConfigProperty(name = "memory-service.api-key")
+    String apiKey;
+
     @Inject
     JobQueueRegistry registry;
-    
+
     @Inject
     TranscriptLoader transcriptLoader;
-    
+
     @Inject
     DurableMemoryExtractor extractor;
-    
+
     @Inject
     DurableMemoryVerifier verifier;
-    
+
     @Inject
     MemoryWriter memoryWriter;
-    
+
+    private ManagedChannel channel;
+    private ConversationsServiceGrpc.ConversationsServiceBlockingStub conversationsStub;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
-    
+
+    @PostConstruct
+    void init() {
+        LOG.infof("Initializing JobProcessor gRPC clients: %s:%d", grpcHost, grpcPort);
+
+        // Create gRPC channel with authentication interceptor
+        channel = ManagedChannelBuilder
+            .forAddress(grpcHost, grpcPort)
+            .usePlaintext()
+            .intercept(new AuthInterceptor(apiKey))
+            .build();
+
+        conversationsStub = ConversationsServiceGrpc.newBlockingStub(channel);
+
+        LOG.info("JobProcessor gRPC clients initialized successfully");
+    }
+
+    /**
+     * Interceptor that adds authentication headers to all gRPC calls.
+     */
+    private static class AuthInterceptor implements ClientInterceptor {
+        private final String apiKey;
+
+        AuthInterceptor(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        @Override
+        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
+                MethodDescriptor<ReqT, RespT> method,
+                CallOptions callOptions,
+                Channel next) {
+            return new ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT>(
+                    next.newCall(method, callOptions)) {
+                @Override
+                public void start(Listener<RespT> responseListener, Metadata headers) {
+                    // Add dual authentication headers (X-API-Key + Authorization)
+                    headers.put(Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
+                    headers.put(Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + apiKey);
+                    super.start(responseListener, headers);
+                }
+            };
+        }
+    }
+
+    @PreDestroy
+    void cleanup() {
+        if (channel != null && !channel.isShutdown()) {
+            LOG.info("Shutting down JobProcessor gRPC channel");
+            channel.shutdown();
+        }
+    }
+
     /**
      * Start processing jobs for a conversation.
      * Runs on a virtual thread to avoid blocking platform threads.
      * Continues processing until the queue is empty.
-     * 
+     *
      * @param conversationId Conversation ID
      */
     public void startProcessing(String conversationId) {
         ConversationJobQueue queue = registry.getOrCreateQueue(conversationId);
-        
+
         // Try to acquire processing lock
         if (!queue.startProcessing()) {
             LOG.debugf("Conversation %s already processing, skipping", conversationId);
             return;
         }
-        
+
         try {
             LOG.infof("Started processing jobs for conversation: %s", conversationId);
-            
+
             // Process jobs until queue is empty
             while (!queue.isEmpty()) {
                 ScopeJob job = queue.poll();
                 if (job == null) {
                     break; // Interrupted
                 }
-                
+
                 try {
                     processJob(job);
                 } catch (Exception e) {
-                    LOG.errorf(e, "Failed to process job for conversation %s: %s", 
+                    LOG.errorf(e, "Failed to process job for conversation %s: %s",
                         conversationId, job);
                     // Continue processing next job despite error
                 }
             }
-            
+
             LOG.infof("Finished processing jobs for conversation: %s", conversationId);
-            
+
         } finally {
             queue.stopProcessing();
-            
+
             // Clean up empty queue
             if (queue.isEmpty()) {
                 registry.removeQueue(conversationId);
             }
         }
     }
-    
+
     /**
      * Start processing asynchronously.
      * Returns immediately, processing happens on virtual thread.
-     * 
+     *
      * @param conversationId Conversation ID
      * @return CompletableFuture that completes when processing finishes
      */
@@ -113,10 +200,10 @@ public class JobProcessor {
         var executor = Executors.newVirtualThreadPerTaskExecutor();
         return CompletableFuture.runAsync(() -> startProcessing(conversationId), executor);
     }
-    
+
     /**
      * Process a single job through the full pipeline.
-     * 
+     *
      * @param job The job to process
      */
     private void processJob(ScopeJob job) {
@@ -125,40 +212,45 @@ public class JobProcessor {
         if (!requestContext.isActive()) {
             requestContext.activate();
         }
-        
+
         try {
             LOG.infof("▶ Processing job: %s", job);
             long startTime = System.currentTimeMillis();
-            
+
             processJobInternal(job, startTime);
-            
+
         } finally {
             if (requestContext.isActive()) {
                 requestContext.terminate();
             }
         }
     }
-    
+
     private void processJobInternal(ScopeJob job, long startTime) {
         try {
+            // Stage 0: Load Conversation Metadata
+            LOG.infof("  [0/5] Loading conversation metadata: %s", job.conversationId());
+            String userId = getConversationOwner(job.conversationId());
+            LOG.infof("  ✓ Conversation owner: %s", userId);
+
             // Stage 1: Load Evidence
-            LOG.infof("  [1/4] Loading transcript for conversation: %s", job.conversationId());
+            LOG.infof("  [1/5] Loading transcript for conversation: %s", job.conversationId());
             EvidencePack evidence = transcriptLoader.loadTranscript(job.conversationId());
             LOG.infof("  ✓ Loaded %d transcript entries", evidence.size());
-            
+
             // Stage 2: Extract Memories
-            LOG.infof("  [2/4] Extracting memories from evidence");
+            LOG.infof("  [2/5] Extracting memories from evidence");
             String evidenceText = evidence.formatAsText();
             DurableExtractionResponse extraction = extractor.extract(evidenceText);
-            
+
             int rawTotal = extraction.getTotalCount();
             List<MemoryCandidate> validCandidates = extraction.getAllCandidates();
             int filteredCount = rawTotal - validCandidates.size();
-            
+
             if (filteredCount > 0) {
                 LOG.warnf("  ⚠ Filtered %d invalid candidates (empty content, zero confidence, or no citations)", filteredCount);
             }
-            
+
             LOG.infof("  ✓ Extracted %d valid memory candidates (raw=%d, filtered=%d): facts=%d, preferences=%d, procedures=%d, problemSolutions=%d, decisions=%d",
                 validCandidates.size(),
                 rawTotal,
@@ -168,16 +260,16 @@ public class JobProcessor {
                 extraction.procedures().size(),
                 extraction.problemSolutions().size(),
                 extraction.decisions().size());
-            
+
             // Stage 3: Verify Memories
-            LOG.infof("  [3/4] Verifying memory candidates");
+            LOG.infof("  [3/5] Verifying memory candidates");
             List<MemoryCandidate> allCandidates = validCandidates;
             String candidatesJson = objectMapper.writeValueAsString(allCandidates);
             DurableVerificationResponse verification = verifier.verify(candidatesJson, evidenceText);
             LOG.infof("  ✓ Verification complete: verified=%d, rejected=%d",
                 verification.verified().size(),
                 verification.rejected().size());
-            
+
             // Log rejected candidates
             if (!verification.rejected().isEmpty()) {
                 LOG.warnf("  ⚠ Rejected candidates:");
@@ -185,31 +277,76 @@ public class JobProcessor {
                     LOG.warnf("    - %s: %s", rejected.reason(), rejected.candidate().content());
                 }
             }
-            
+
             // Stage 4: Write Memories
             if (!verification.verified().isEmpty()) {
-                LOG.infof("  [4/4] Writing %d verified memories to memory-service", verification.verified().size());
-                
-                // Extract userId from job metadata (assuming it's in the job context)
-                // For now, use a placeholder - this should come from the conversation metadata
-                String userId = "user-placeholder"; // TODO: Extract from conversation metadata
-                
+                LOG.infof("  [4/5] Writing %d verified memories to memory-service for user: %s",
+                    verification.verified().size(), userId);
+
                 memoryWriter.writeMemories(userId, verification.verified());
-                LOG.infof("  ✓ Successfully wrote %d memories", verification.verified().size());
+                LOG.infof("  ✓ Successfully wrote %d memories to namespace: [\"user\", \"%s\", \"cognition.v1\", *]",
+                    verification.verified().size(), userId);
             } else {
-                LOG.infof("  [4/4] No verified memories to write");
+                LOG.infof("  [4/5] No verified memories to write");
             }
-            
+
             long duration = System.currentTimeMillis() - startTime;
             LOG.infof("✓ Job completed successfully in %dms: %s", duration, job);
-            
+
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
             LOG.errorf(e, "✗ Job failed after %dms: %s", duration, job);
             throw new JobProcessingException("Failed to process job for conversation " + job.conversationId(), e);
         }
     }
-    
+
+    /**
+     * Get the owner user ID for a conversation by loading conversation metadata.
+     *
+     * @param conversationId Conversation UUID string
+     * @return Owner user ID
+     * @throws JobProcessingException if conversation metadata cannot be loaded
+     */
+    private String getConversationOwner(String conversationId) {
+        try {
+            ByteString conversationIdBytes = uuidToBytes(conversationId);
+
+            GetConversationRequest request = GetConversationRequest.newBuilder()
+                .setConversationId(conversationIdBytes)
+                .build();
+
+            Conversation conversation = conversationsStub.getConversation(request);
+
+            String ownerId = conversation.getOwnerUserId();
+            LOG.debugf("Loaded conversation %s owner: %s", conversationId, ownerId);
+
+            return ownerId;
+
+        } catch (StatusRuntimeException e) {
+            Status status = e.getStatus();
+            LOG.errorf(e, "Failed to load conversation metadata for %s: %s", conversationId, status);
+            throw new JobProcessingException("Failed to load conversation metadata for " + conversationId, e);
+        } catch (Exception e) {
+            LOG.errorf(e, "Unexpected error loading conversation metadata for %s", conversationId);
+            throw new JobProcessingException("Failed to load conversation metadata for " + conversationId, e);
+        }
+    }
+
+    /**
+     * Convert UUID string to protobuf ByteString (16-byte big-endian).
+     */
+    private ByteString uuidToBytes(String uuidString) {
+        try {
+            UUID uuid = UUID.fromString(uuidString);
+            ByteBuffer buffer = ByteBuffer.allocate(16);
+            buffer.putLong(uuid.getMostSignificantBits());
+            buffer.putLong(uuid.getLeastSignificantBits());
+            return ByteString.copyFrom(buffer.array());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid UUID format: " + uuidString, e);
+        }
+    }
+
     /**
      * Exception thrown when job processing fails.
      */
