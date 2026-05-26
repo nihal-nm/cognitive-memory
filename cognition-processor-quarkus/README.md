@@ -1,152 +1,94 @@
 # Cognition Processor - Quarkus Implementation
 
-Reference implementation of the Memory Service Cognition Processor as described in [Enhancement 099](https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md).
+A Quarkus-based implementation of the Memory Service cognition layer that processes conversation events to extract and organize memories.
 
-## Overview
+## What is this?
 
-This is a standalone Quarkus application that implements the cognition layer for Memory Service:
-- Consumes substrate events via gRPC
-- Extracts durable and cache-only memories using LangChain4j
-- Implements multi-stage pipeline: Extract → Verify → Consolidate
-- Writes derived memories back to Memory Service substrate
+This project implements the **cognition layer** of a two-layer memory architecture:
+- **Substrate layer** ([memory-service](https://github.com/chirino/memory-service)) - stores raw conversation data and manages access control
+- **Cognition layer** (this project) - processes events to extract topics, facts, preferences, and other derived memories
 
-## Architecture
+Think of it as the "intelligence" that turns raw conversation transcripts into structured, searchable memories.
 
-```
-Memory Service Events → Debounce → Evidence Packs → 
-Extraction (LangChain4j) → Verification → Consolidation → 
-Memory Storage (gRPC)
-```
-
-## Memory Types
-
-### Durable Memories
-- **fact** - Stable user/project facts
-- **preference** - Repeated user preferences
-- **procedure** - Reusable workflows
-- **problem_solution** - Issue-resolution patterns
-- **decision** - Decision rules/criteria
-
-### Cache-Only Memories
-- **bridge** - Current focus/goals (retrieval aid)
-- **topic** - Recent themes (retrieval aid)
-- **summary** - Conversation summaries (rolling cache)
-
-## Technology Stack
-
-- **Quarkus 3.17.5** - Application framework
-- **LangChain4j** - LLM abstraction and structured extraction
-- **OpenAI** - Default LLM provider (configurable)
-- **Micrometer + Prometheus** - Metrics and observability
-- **YAML Config** - Configuration management
-
-## Project Structure
-
-```
-cognition-processor-quarkus/
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── io/github/rigazilla/memory/
-│   │   │       └── cognition/
-│   │   │           ├── pipeline/      # Event processing pipeline
-│   │   │           ├── evidence/      # Evidence pack builder
-│   │   │           ├── extraction/    # LangChain4j extractors
-│   │   │           ├── verification/  # Citation verification
-│   │   │           ├── consolidation/ # Memory consolidation
-│   │   │           └── storage/       # gRPC memory storage
-│   │   └── resources/
-│   │       ├── application.yml        # Configuration
-│   │       └── prompts/               # LLM prompts
-│   └── test/
-│       └── java/
-└── pom.xml
-```
-
-## Configuration
-
-Key configuration properties (see `application.yml`):
-
-```yaml
-# Identity
-cognition:
-  worker-id: worker-1
-  runtime-id: cognition-processor-v1
-
-# Evidence bounds
-evidence:
-  base:
-    max-tokens: 6000
-  delta:
-    max-entries: 12
-
-# Debouncing
-scheduler:
-  debounce-delay: PT1M
-  max-batch-entries: 24
-
-# LangChain4j / OpenAI
-quarkus:
-  langchain4j:
-    openai:
-      api-key: ${OPENAI_API_KEY}
-      memory:
-        chat-model:
-          model-name: gpt-4o-mini
-```
-
-## Development
+## Quick Start
 
 ### Prerequisites
 - Java 21+
 - Maven 3.9+
-- Memory Service running (for integration)
-- OpenAI API key (or alternative LLM provider)
+- Memory Service running - see [../memory-service](../memory-service) for local setup instructions
 
-### Run in Dev Mode
-```bash
-./mvnw quarkus:dev
+### Run It
+
+1. **Start the cognition processor**:
+   ```bash
+   ./mvnw quarkus:dev
+   ```
+
+2. **Verify it's running**:
+   - Check logs for "Started AdminEventClient - connected to memory-service"
+   - Visit http://localhost:8090 for health checks
+
+The processor will automatically:
+- Subscribe to memory-service events
+- Process new conversations
+- Extract and verify memories
+- Write them back to memory-service
+
+## How It Works
+
+```
+Memory Service Events → Debounce → Evidence Packs → 
+Extract (LLM) → Verify → Write Memories
 ```
 
-### Build
-```bash
-./mvnw clean package
-```
+See [AGENTS.md](./AGENTS.md) for architecture details and [Enhancement 099](https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md) for full specification.
 
-### Run Tests
-```bash
-./mvnw test
-```
+## Configuration
 
-## Dependencies
+Default configuration works with local development setup. Key settings in `src/main/resources/application.properties`:
+- Memory Service connection: `memory-service.grpc.host` / `memory-service.grpc.port`
+- LLM provider: `quarkus.langchain4j.*.chat-model.provider` (default: Ollama)
+- Models: `memory` model for extraction/verification, `topic-summary` for summaries
 
-### Hard Prerequisites
-- Enhancement 101: gRPC API parity (event stream, checkpoints, on-behalf-of policy)
-- Enhancement 100: Enhanced memory search (retrieval contract)
+## Project Status
 
-### Soft Integration
-- Enhancement 090: Adaptive knowledge clustering (optional evidence source)
-- Enhancement 091: Skill extraction (downstream consumer of procedures)
+**Currently Implemented** (see [DONE/](./DONE/) folder for details):
+- ✅ gRPC event stream client
+- ✅ Debounce windows and batching
+- ✅ Job processing pipeline
+- ✅ Memory extraction (5 types: fact, preference, procedure, problem_solution, decision)
+- ✅ Citation verification
+- ✅ Provenance tracking
 
-## Implementation Status
+**Not Yet Implemented** (see [TODO/](./TODO/) folder):
+- ❌ Memory consolidation (deduplication, merging)
+- ❌ Topic summary extraction
+- ❌ Cache-only notes (bridge, topic)
+- ❌ Prompt caching optimization
 
-- [ ] Event processing pipeline
-- [ ] Debouncing scheduler
-- [ ] Evidence pack builder
-- [ ] LangChain4j extractors (DurableMemoryExtractor, TopicSummaryExtractor)
-- [ ] Citation verifier
-- [ ] Memory consolidator
-- [ ] gRPC storage client
-- [ ] Checkpoint persistence
-- [ ] Metrics and observability
-- [ ] Integration tests
+## For New Contributors
 
-## References
+- 📖 Start with [AGENTS.md](./AGENTS.md) for project context
+- 📝 Browse [TODO/](./TODO/) folder for work items
+- ✅ Check [DONE/](./DONE/) folder to understand what's completed
 
-- [Enhancement 099: Quarkus + LangChain4j Cognition Processor](https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md)
-- [Memory Cognition Architecture](https://github.com/chirino/memory-service/blob/main/docs/memory-cognition.md)
-- [Memory Service Documentation](https://chirino.github.io/memory-service/)
-- [LangChain4j Documentation](https://docs.langchain4j.dev/)
+## Learn More
+
+### About This Project
+- [AGENTS.md](./AGENTS.md) - Project overview and guidelines for AI assistants
+- [Enhancement 099](https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md) - Implementation specification
+- [TODO/gap-analysis-model-backed-extraction.md](./TODO/gap-analysis-model-backed-extraction.md) - Current vs spec comparison
+
+### About Memory Service
+- [Memory Service Repository](https://github.com/chirino/memory-service)
+- [Core Concepts](https://chirino.github.io/memory-service/docs/concepts/) - Conversations, entries, memories, access control
+- [Quarkus Guide](https://chirino.github.io/memory-service/docs/quarkus/) - Quarkus integration patterns
+- [Memory Cognition Architecture](https://github.com/chirino/memory-service/blob/main/docs/memory-cognition.md) - Two-layer design
+
+### Technologies
+- [Quarkus](https://quarkus.io/) - Application framework
+- [LangChain4j](https://docs.langchain4j.dev/) - LLM integration
+- [Ollama](https://ollama.ai) - Local LLM runtime
 
 ## License
 

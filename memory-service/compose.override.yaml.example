@@ -1,0 +1,9 @@
+  services:
+    memory-service:
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
+
+    chat-quarkus:
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
+
