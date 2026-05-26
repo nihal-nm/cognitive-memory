@@ -8,6 +8,7 @@ import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
 import io.github.chirino.memory.grpc.v1.PutMemoryRequest;
 import io.github.chirino.memory.grpc.v1.RequestActor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
+import io.github.rigazilla.memory.cognition.model.Provenance;
 import io.grpc.ClientCall;
 import io.grpc.ClientInterceptor;
 import io.grpc.ForwardingClientCall;
@@ -75,32 +76,34 @@ public class MemoryWriter {
     
     /**
      * Write a single memory candidate to memory service.
-     * 
+     *
      * @param userId User ID for namespace
      * @param candidate Memory candidate to write
+     * @param provenance Provenance information for audit and replay
      * @return Memory write result with ID and metadata
      */
-    public MemoryWriteResult writeMemory(String userId, MemoryCandidate candidate) {
+    public MemoryWriteResult writeMemory(String userId, MemoryCandidate candidate, Provenance provenance) {
         try {
-            LOG.debugf("Writing memory: type=%s, userId=%s, content='%s'", 
-                candidate.type(), userId, 
-                candidate.content().length() > 50 ? 
-                    candidate.content().substring(0, 47) + "..." : 
+            LOG.debugf("Writing memory: type=%s, userId=%s, content='%s'",
+                candidate.type(), userId,
+                candidate.content().length() > 50 ?
+                    candidate.content().substring(0, 47) + "..." :
                     candidate.content());
-            
+
             // Build namespace: ["user", userId, "cognition.v1", memoryType]
             List<String> namespace = List.of("user", userId, COGNITION_VERSION, candidate.type());
-            
+
             // Generate unique key for this memory
             String key = UUID.randomUUID().toString();
-            
-            // Build value struct with memory content and metadata
+
+            // Build value struct with memory content, metadata, and provenance
             Struct value = Struct.newBuilder()
                 .putFields("content", Value.newBuilder().setStringValue(candidate.content()).build())
                 .putFields("confidence", Value.newBuilder().setNumberValue(candidate.confidence()).build())
                 .putFields("citations", buildCitationsValue(candidate.citations()))
+                .putFields("provenance", buildProvenanceValue(provenance))
                 .build();
-            
+
             // Build request with RequestActor for on-behalf-of authorization
             PutMemoryRequest request = PutMemoryRequest.newBuilder()
                 .addAllNamespace(namespace)
@@ -110,15 +113,15 @@ public class MemoryWriter {
                     .setOnBehalfOfUserId(userId)
                     .build())
                 .build();
-            
+
             // Call gRPC service
             MemoryWriteResult result = memoriesStub.putMemory(request);
-            
-            LOG.infof("Memory written successfully: id=%s, type=%s, key=%s", 
+
+            LOG.infof("Memory written successfully: id=%s, type=%s, key=%s",
                 bytesToUuid(result.getId()), candidate.type(), key);
-            
+
             return result;
-            
+
         } catch (Exception e) {
             LOG.errorf(e, "Failed to write memory: type=%s, userId=%s", candidate.type(), userId);
             throw new MemoryWriteException("Failed to write memory for user " + userId, e);
@@ -127,16 +130,17 @@ public class MemoryWriter {
     
     /**
      * Write multiple memory candidates in batch.
-     * 
+     *
      * @param userId User ID for namespace
      * @param candidates List of memory candidates to write
+     * @param provenance Provenance information shared by all memories in this batch
      * @return List of write results
      */
-    public List<MemoryWriteResult> writeMemories(String userId, List<MemoryCandidate> candidates) {
+    public List<MemoryWriteResult> writeMemories(String userId, List<MemoryCandidate> candidates, Provenance provenance) {
         LOG.infof("Writing %d memories for user %s", candidates.size(), userId);
-        
+
         return candidates.stream()
-            .map(candidate -> writeMemory(userId, candidate))
+            .map(candidate -> writeMemory(userId, candidate, provenance))
             .toList();
     }
     
@@ -149,6 +153,70 @@ public class MemoryWriter {
             listBuilder.addValues(Value.newBuilder().setStringValue(citation).build());
         }
         return Value.newBuilder().setListValue(listBuilder.build()).build();
+    }
+
+    /**
+     * Build protobuf Value for provenance struct.
+     * Converts Provenance record to nested protobuf Struct.
+     */
+    private Value buildProvenanceValue(Provenance provenance) {
+        Struct.Builder provenanceStruct = Struct.newBuilder();
+
+        // Batch identification
+        provenanceStruct.putFields("conversation_id",
+            Value.newBuilder().setStringValue(provenance.conversationId()).build());
+        provenanceStruct.putFields("entry_ids",
+            buildStringListValue(provenance.entryIds()));
+        provenanceStruct.putFields("event_cursors",
+            buildEventCursorsValue(provenance.firstEventCursor(), provenance.latestEventCursor()));
+        provenanceStruct.putFields("batch_trigger",
+            Value.newBuilder().setStringValue(provenance.batchTrigger()).build());
+
+        // Evidence pack fingerprint (optional fields)
+        if (provenance.sourceHash() != null) {
+            provenanceStruct.putFields("source_hash",
+                Value.newBuilder().setStringValue(provenance.sourceHash()).build());
+        }
+        if (provenance.evidenceBaseId() != null) {
+            provenanceStruct.putFields("evidence_base_id",
+                Value.newBuilder().setStringValue(provenance.evidenceBaseId()).build());
+        }
+        if (provenance.evidenceBaseHash() != null) {
+            provenanceStruct.putFields("evidence_base_hash",
+                Value.newBuilder().setStringValue(provenance.evidenceBaseHash()).build());
+        }
+
+        // Runtime attribution
+        provenanceStruct.putFields("runtime_id",
+            Value.newBuilder().setStringValue(provenance.runtimeId()).build());
+        provenanceStruct.putFields("runtime_version",
+            Value.newBuilder().setStringValue(provenance.runtimeVersion()).build());
+        provenanceStruct.putFields("processed_at",
+            Value.newBuilder().setStringValue(provenance.processedAt().toString()).build());
+
+        return Value.newBuilder().setStructValue(provenanceStruct.build()).build();
+    }
+
+    /**
+     * Build protobuf ListValue from string list.
+     */
+    private Value buildStringListValue(List<String> strings) {
+        com.google.protobuf.ListValue.Builder listBuilder = com.google.protobuf.ListValue.newBuilder();
+        for (String str : strings) {
+            listBuilder.addValues(Value.newBuilder().setStringValue(str).build());
+        }
+        return Value.newBuilder().setListValue(listBuilder.build()).build();
+    }
+
+    /**
+     * Build protobuf Struct for event cursors.
+     */
+    private Value buildEventCursorsValue(String first, String latest) {
+        Struct cursors = Struct.newBuilder()
+            .putFields("first", Value.newBuilder().setStringValue(first).build())
+            .putFields("latest", Value.newBuilder().setStringValue(latest).build())
+            .build();
+        return Value.newBuilder().setStructValue(cursors).build();
     }
     
     /**

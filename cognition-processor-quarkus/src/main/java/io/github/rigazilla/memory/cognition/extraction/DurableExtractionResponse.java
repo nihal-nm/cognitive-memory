@@ -39,6 +39,39 @@ public record DurableExtractionResponse(
             .filter(this::isValidCandidate)
             .toList();
     }
+
+    /**
+     * Get all invalid candidates that were filtered out.
+     * Useful for debugging/logging what was rejected.
+     */
+    public List<MemoryCandidate> getInvalidCandidates() {
+        return List.of(
+            facts,
+            preferences,
+            procedures,
+            problemSolutions,
+            decisions
+        ).stream()
+            .flatMap(List::stream)
+            .filter(candidate -> !isValidCandidate(candidate))
+            .toList();
+    }
+
+    /**
+     * Get reason why a candidate is invalid.
+     */
+    public String getInvalidReason(MemoryCandidate candidate) {
+        if (candidate.content() == null || candidate.content().isBlank()) {
+            return "empty or blank content";
+        }
+        if (candidate.confidence() <= 0.0) {
+            return String.format("zero/negative confidence (%.2f)", candidate.confidence());
+        }
+        if (candidate.citations() == null || candidate.citations().isEmpty()) {
+            return "no citations";
+        }
+        return "unknown";
+    }
     
     /**
      * Check if a candidate is valid for storage.

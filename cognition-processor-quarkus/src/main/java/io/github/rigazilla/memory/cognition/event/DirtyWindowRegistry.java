@@ -28,7 +28,10 @@ public class DirtyWindowRegistry {
     
     // Active windows: conversationId -> DirtyWindow
     private final ConcurrentHashMap<String, DirtyWindow> windows = new ConcurrentHashMap<>();
-    
+
+    // Last promoted entry ID per conversation (for linking windows)
+    private final ConcurrentHashMap<String, String> lastPromotedEntryId = new ConcurrentHashMap<>();
+
     // Lock for promotion operations
     private final ReentrantLock promotionLock = new ReentrantLock();
     
@@ -72,31 +75,36 @@ public class DirtyWindowRegistry {
         
         // Create or extend window
         boolean[] promoted = {false};
+        DirtyWindow[] windowToPromote = {null};
         windows.compute(conversationId, (k, existing) -> {
             if (existing == null) {
+                // Get previous entry ID from last promoted window (null for first window)
+                String previousEntryId = lastPromotedEntryId.get(conversationId);
+
                 // Create new window
-                DirtyWindow newWindow = new DirtyWindow(conversationId, eventCursor, entryId, observedAt, debounceDelay);
-                
+                DirtyWindow newWindow = new DirtyWindow(conversationId, eventCursor, entryId, observedAt, debounceDelay, previousEntryId);
+
                 LOG.debugf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                 LOG.debugf("Window Created");
                 LOG.debugf("  Conversation ID:    %s", conversationId);
                 LOG.debugf("  First Cursor:       %s", eventCursor);
                 LOG.debugf("  Entry ID:           %s", entryId != null ? entryId : "(none)");
+                LOG.debugf("  Previous Entry ID:  %s", previousEntryId != null ? previousEntryId : "(none - first window)");
                 LOG.debugf("  Observed At:        %s", observedAt);
                 LOG.debugf("  Due At:             %s", newWindow.getDueAt());
                 LOG.debugf("  Debounce Delay:     %s", debounceDelay);
                 LOG.debugf("  Initial Event Count: 1");
                 LOG.debugf("  Initial Entry Count: %d", entryId != null ? 1 : 0);
                 LOG.debugf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                
+
                 return newWindow;
             } else {
                 // Extend existing window
                 int oldEventCount = existing.getEventCount();
                 int oldEntryCount = existing.getEntryCount();
-                
+
                 existing.extend(eventCursor, entryId, observedAt);
-                
+
                 LOG.debugf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                 LOG.debugf("Window Extended");
                 LOG.debugf("  Conversation ID:    %s", conversationId);
@@ -109,27 +117,23 @@ public class DirtyWindowRegistry {
                 LOG.debugf("  Due At:             %s", existing.getDueAt());
                 LOG.debugf("  Time Until Due:     %s", Duration.between(observedAt, existing.getDueAt()));
                 LOG.debugf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                
+
                 // Check if we should promote immediately due to max entries
                 if (existing.isMaxEntriesReached(maxBatchEntries)) {
-                    LOG.infof("Window for conversation %s reached max entries (%d), promoting immediately", 
+                    LOG.infof("Window for conversation %s reached max entries (%d), promoting immediately",
                              conversationId, maxBatchEntries);
                     promoted[0] = true;
+                    windowToPromote[0] = existing;  // Save reference before removing
                     return null; // Remove from map, will be promoted
                 }
-                
+
                 return existing;
             }
         });
-        
+
         // If we removed the window due to max entries, promote it now
         if (promoted[0]) {
-            // We need to recreate the window for promotion since we removed it
-            // This is safe because we're the only thread that removed it
-            DirtyWindow windowToPromote = new DirtyWindow(
-                conversationId, eventCursor, entryId, observedAt, debounceDelay
-            );
-            promoteWindow(windowToPromote, "max_entries");
+            promoteWindow(windowToPromote[0], "max_entries");
         }
         
         return promoted[0];
@@ -246,20 +250,29 @@ public class DirtyWindowRegistry {
      * Promote a single window to a scope job.
      */
     private void promoteWindow(DirtyWindow window, String trigger) {
-        LOG.infof("Promoting window for conversation %s (trigger: %s): %s", 
+        LOG.infof("Promoting window for conversation %s (trigger: %s): %s",
                  window.getConversationId(), trigger, window);
-        
+
+        // Update last promoted entry ID for next window
+        List<String> entryIds = window.getEntryIds();
+        if (!entryIds.isEmpty()) {
+            // entryIds is ordered (LinkedHashSet) - last element is chronologically last
+            String lastEntryId = entryIds.get(entryIds.size() - 1);
+            lastPromotedEntryId.put(window.getConversationId(), lastEntryId);
+        }
+
         // Create scope job
         ScopeJob job = new ScopeJob(
             window.getConversationId(),
             window.getFirstEventCursor(),
             window.getLatestEventCursor(),
             window.getEntryIds(),
+            window.getPreviousEntryId(),
             window.getFirstObservedAt(),
             Instant.now(),
             trigger
         );
-        
+
         // Dispatch job
         jobDispatcher.dispatch(job);
     }
@@ -289,14 +302,15 @@ public class DirtyWindowRegistry {
                     sw.firstEventCursor(),
                     sw.latestEventCursor(),
                     sw.entryIds(),
+                    sw.previousEntryId(),
                     sw.firstObservedAt(),
                     sw.latestObservedAt(),
                     sw.dueAt(),
                     sw.eventCount()
                 );
-                
+
                 windows.put(sw.conversationId(), window);
-                
+
                 LOG.debugf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                 LOG.debugf("Window Restored");
                 LOG.debugf("  Conversation ID:    %s", window.getConversationId());
@@ -304,6 +318,7 @@ public class DirtyWindowRegistry {
                 LOG.debugf("  Event Count:        %d", window.getEventCount());
                 LOG.debugf("  Entry Count:        %d", window.getEntryCount());
                 LOG.debugf("  Entry IDs:          %s", window.getEntryIds());
+                LOG.debugf("  Previous Entry ID:  %s", window.getPreviousEntryId() != null ? window.getPreviousEntryId() : "(none - first window)");
                 LOG.debugf("  First Observed:     %s", window.getFirstObservedAt());
                 LOG.debugf("  Latest Observed:    %s", window.getLatestObservedAt());
                 LOG.debugf("  Due At:             %s", window.getDueAt());
@@ -329,6 +344,7 @@ public class DirtyWindowRegistry {
                 window.getFirstEventCursor(),
                 window.getLatestEventCursor(),
                 window.getEntryIds(),
+                window.getPreviousEntryId(),
                 window.getFirstObservedAt(),
                 window.getLatestObservedAt(),
                 window.getDueAt(),

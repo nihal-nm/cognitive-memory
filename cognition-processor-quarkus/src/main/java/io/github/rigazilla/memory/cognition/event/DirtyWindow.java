@@ -3,46 +3,50 @@ package io.github.rigazilla.memory.cognition.event;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
  * Represents a debounce window for a single conversation.
  * Collects multiple events for the same conversation before promoting to a ScopeJob.
- * 
+ *
  * Thread-safety: This class is NOT thread-safe. Synchronization must be handled
  * by the DirtyWindowRegistry.
  */
 public class DirtyWindow {
-    
+
     private final String conversationId;
-    
+
     // Event tracking
     private String firstEventCursor;
     private String latestEventCursor;
-    private final Set<String> entryIds;
-    
+    private final Set<String> entryIds;  // LinkedHashSet preserves insertion order
+
+    // Entry ID from the previous promoted window (null for first window)
+    private final String previousEntryId;
+
     // Timing
     private Instant firstObservedAt;
     private Instant latestObservedAt;
     private Instant dueAt;
-    
+
     // Metadata
     private int eventCount;
     
     /**
      * Create a new dirty window from the first event.
      */
-    public DirtyWindow(String conversationId, String eventCursor, String entryId, 
-                       Instant observedAt, Duration debounceDelay) {
+    public DirtyWindow(String conversationId, String eventCursor, String entryId,
+                       Instant observedAt, Duration debounceDelay, String previousEntryId) {
         this.conversationId = conversationId;
         this.firstEventCursor = eventCursor;
         this.latestEventCursor = eventCursor;
-        this.entryIds = new HashSet<>();
+        this.entryIds = new LinkedHashSet<>();  // Preserves insertion order
         if (entryId != null) {
             this.entryIds.add(entryId);
         }
+        this.previousEntryId = previousEntryId;
         this.firstObservedAt = observedAt;
         this.latestObservedAt = observedAt;
         this.dueAt = observedAt.plus(debounceDelay);
@@ -53,12 +57,13 @@ public class DirtyWindow {
      * Restore a window from checkpoint data.
      */
     public DirtyWindow(String conversationId, String firstEventCursor, String latestEventCursor,
-                       List<String> entryIds, Instant firstObservedAt, Instant latestObservedAt,
-                       Instant dueAt, int eventCount) {
+                       List<String> entryIds, String previousEntryId, Instant firstObservedAt,
+                       Instant latestObservedAt, Instant dueAt, int eventCount) {
         this.conversationId = conversationId;
         this.firstEventCursor = firstEventCursor;
         this.latestEventCursor = latestEventCursor;
-        this.entryIds = new HashSet<>(entryIds);
+        this.entryIds = new LinkedHashSet<>(entryIds);  // Preserves order from checkpoint
+        this.previousEntryId = previousEntryId;
         this.firstObservedAt = firstObservedAt;
         this.latestObservedAt = latestObservedAt;
         this.dueAt = dueAt;
@@ -124,11 +129,15 @@ public class DirtyWindow {
     public List<String> getEntryIds() {
         return new ArrayList<>(entryIds);
     }
-    
+
     public int getEntryCount() {
         return entryIds.size();
     }
-    
+
+    public String getPreviousEntryId() {
+        return previousEntryId;
+    }
+
     public Instant getFirstObservedAt() {
         return firstObservedAt;
     }

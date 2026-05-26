@@ -5,11 +5,12 @@ import java.util.List;
 
 /**
  * Serializable representation of a DirtyWindow for checkpoint persistence.
- * 
+ *
  * @param conversationId Conversation ID
  * @param firstEventCursor First event cursor in this window
  * @param latestEventCursor Latest event cursor in this window
  * @param entryIds List of entry IDs affected by events in this window
+ * @param previousEntryId Entry ID from the previous promoted window (null for first window)
  * @param firstObservedAt When the first event was observed
  * @param latestObservedAt When the latest event was observed
  * @param dueAt When this window should be promoted
@@ -20,6 +21,7 @@ public record SerializedWindow(
     String firstEventCursor,
     String latestEventCursor,
     List<String> entryIds,
+    String previousEntryId,
     Instant firstObservedAt,
     Instant latestObservedAt,
     Instant dueAt,

@@ -197,7 +197,11 @@ public class GrpcAdminEventClient {
                 }
                 
                 // Extract entry ID (for entry events)
-                entryId = extractJsonField(jsonData, "entry_id");
+                // Entry events use field name "entry"
+                entryId = extractJsonField(jsonData, "entry");
+                if (entryId == null) {
+                    entryId = extractJsonField(jsonData, "entry_id");
+                }
                 if (entryId == null) {
                     entryId = extractJsonField(jsonData, "id");
                 }

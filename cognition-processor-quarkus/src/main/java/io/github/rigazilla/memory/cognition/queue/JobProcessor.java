@@ -11,6 +11,7 @@ import io.github.rigazilla.memory.cognition.evidence.TranscriptLoader;
 import io.github.rigazilla.memory.cognition.extraction.DurableExtractionResponse;
 import io.github.rigazilla.memory.cognition.extraction.DurableMemoryExtractor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
+import io.github.rigazilla.memory.cognition.model.Provenance;
 import io.github.rigazilla.memory.cognition.verification.DurableMemoryVerifier;
 import io.github.rigazilla.memory.cognition.verification.DurableVerificationResponse;
 import io.github.rigazilla.memory.cognition.writer.MemoryWriter;
@@ -68,6 +69,12 @@ public class JobProcessor {
 
     @ConfigProperty(name = "memory-service.api-key")
     String apiKey;
+
+    @ConfigProperty(name = "cognition.runtime.id")
+    String runtimeId;
+
+    @ConfigProperty(name = "cognition.runtime.version", defaultValue = "1.0.0-SNAPSHOT")
+    String runtimeVersion;
 
     @Inject
     JobQueueRegistry registry;
@@ -235,20 +242,55 @@ public class JobProcessor {
 
             // Stage 1: Load Evidence
             LOG.infof("  [1/5] Loading transcript for conversation: %s", job.conversationId());
-            EvidencePack evidence = transcriptLoader.loadTranscript(job.conversationId());
+            EvidencePack evidence = transcriptLoader.loadTranscript(
+                job.conversationId(),
+                job.entryIds(),
+                job.previousEntryId()
+            );
             LOG.infof("  ✓ Loaded %d transcript entries", evidence.size());
+
+            // Build provenance from ScopeJob for this batch
+            Provenance provenance = Provenance.fromScopeJobMinimal(job, runtimeId, runtimeVersion);
+            LOG.debugf("  ✓ Built provenance: batch=%d entries, trigger=%s",
+                provenance.entryIds().size(), provenance.batchTrigger());
 
             // Stage 2: Extract Memories
             LOG.infof("  [2/5] Extracting memories from evidence");
             String evidenceText = evidence.formatAsText();
+
+            // Debug log: show formatted evidence sent to LLM
+            if (LOG.isDebugEnabled()) {
+                LOG.debugf("  Evidence text sent to extractor (%d chars):", evidenceText.length());
+                String preview = evidenceText.length() > 500
+                    ? evidenceText.substring(0, 497) + "..."
+                    : evidenceText;
+                LOG.debugf("  %s", preview);
+                if (evidenceText.length() > 500) {
+                    LOG.debugf("  ... (truncated, full length: %d chars)", evidenceText.length());
+                }
+            }
+
             DurableExtractionResponse extraction = extractor.extract(evidenceText);
 
             int rawTotal = extraction.getTotalCount();
             List<MemoryCandidate> validCandidates = extraction.getAllCandidates();
+            List<MemoryCandidate> invalidCandidates = extraction.getInvalidCandidates();
             int filteredCount = rawTotal - validCandidates.size();
 
             if (filteredCount > 0) {
-                LOG.warnf("  ⚠ Filtered %d invalid candidates (empty content, zero confidence, or no citations)", filteredCount);
+                LOG.debugf("  ⚠ Filtered %d invalid candidates:", filteredCount);
+                for (MemoryCandidate invalid : invalidCandidates) {
+                    String reason = extraction.getInvalidReason(invalid);
+                    String preview = invalid.content() != null && invalid.content().length() > 50
+                        ? invalid.content().substring(0, 47) + "..."
+                        : (invalid.content() != null ? invalid.content() : "(null)");
+                    LOG.debugf("    - [%s] %s - reason: %s, confidence: %.2f, citations: %d",
+                        invalid.type(),
+                        preview,
+                        reason,
+                        invalid.confidence(),
+                        invalid.citations() != null ? invalid.citations().size() : 0);
+                }
             }
 
             LOG.infof("  ✓ Extracted %d valid memory candidates (raw=%d, filtered=%d): facts=%d, preferences=%d, procedures=%d, problemSolutions=%d, decisions=%d",
@@ -270,11 +312,18 @@ public class JobProcessor {
                 verification.verified().size(),
                 verification.rejected().size());
 
-            // Log rejected candidates
+            // Log rejected candidates with details
             if (!verification.rejected().isEmpty()) {
-                LOG.warnf("  ⚠ Rejected candidates:");
+                LOG.debugf("  ⚠ Rejected %d candidates during verification:", verification.rejected().size());
                 for (var rejected : verification.rejected()) {
-                    LOG.warnf("    - %s: %s", rejected.reason(), rejected.candidate().content());
+                    String preview = rejected.candidate().content().length() > 50
+                        ? rejected.candidate().content().substring(0, 47) + "..."
+                        : rejected.candidate().content();
+                    LOG.debugf("    - [%s] %s - reason: %s, confidence: %.2f",
+                        rejected.candidate().type(),
+                        preview,
+                        rejected.reason(),
+                        rejected.candidate().confidence());
                 }
             }
 
@@ -283,9 +332,11 @@ public class JobProcessor {
                 LOG.infof("  [4/5] Writing %d verified memories to memory-service for user: %s",
                     verification.verified().size(), userId);
 
-                memoryWriter.writeMemories(userId, verification.verified());
+                memoryWriter.writeMemories(userId, verification.verified(), provenance);
                 LOG.infof("  ✓ Successfully wrote %d memories to namespace: [\"user\", \"%s\", \"cognition.v1\", *]",
                     verification.verified().size(), userId);
+                LOG.debugf("  ✓ Provenance recorded: conversation=%s, entries=%d, trigger=%s",
+                    provenance.conversationId(), provenance.entryIds().size(), provenance.batchTrigger());
             } else {
                 LOG.infof("  [4/5] No verified memories to write");
             }
