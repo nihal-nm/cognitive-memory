@@ -48,6 +48,13 @@ For a general description of the whole project see https://github.com/chirino/me
 
 There are guidelines for the implementation at https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md. It's strongly reccomended to follow them when writing new code, but it's not mandatory. You must inform the user if you plan to not follow the guidelines.
 
+## Documentation
+
+- **Core concepts**: https://chirino.github.io/memory-service/docs/concepts/ - Essential memory-service concepts (conversations, entries, memories, access control) that the cognition layer builds upon
+- **Quarkus implementation**: https://chirino.github.io/memory-service/docs/quarkus/ - Quarkus-specific information and patterns for this implementation
+
 ## Progress tracking
 
 When a new feature is implemented and complete a design description document must be created in the DONE folder. Files there must be prefixed with "NNN-" where NNN is an increasing number.
+
+Future work items, research tasks, and ideas are tracked in the TODO folder as individual markdown files.
