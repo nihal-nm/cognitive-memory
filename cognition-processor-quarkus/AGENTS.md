@@ -53,6 +53,10 @@ There are guidelines for the implementation at https://github.com/chirino/memory
 - **Core concepts**: https://chirino.github.io/memory-service/docs/concepts/ - Essential memory-service concepts (conversations, entries, memories, access control) that the cognition layer builds upon
 - **Quarkus implementation**: https://chirino.github.io/memory-service/docs/quarkus/ - Quarkus-specific information and patterns for this implementation
 
+## Security
+
+Never read, print, summarize, parse, or transmit the `.env` file. It may contain secrets, API keys, tokens, or other credentials that must not be sent over the network by an AI assistant. If environment variable names are needed, inspect checked-in examples, documentation, application configuration, or ask the user to provide non-secret placeholders instead.
+
 ## Progress tracking
 
 When a new feature is implemented and complete a design description document must be created in the DONE folder. Files there must be prefixed with "NNN-" where NNN is an increasing number.
