@@ -59,6 +59,9 @@ public class GrpcAdminEventClient {
     @ConfigProperty(name = "cognition.runtime.version", defaultValue = "1")
     String runtimeVersion;
 
+    @ConfigProperty(name = "cognition.checkpoint.reset-on-startup", defaultValue = "false")
+    boolean resetCheckpointOnStartup;
+
     @Inject
     CheckpointService checkpointService;
     
@@ -90,6 +93,11 @@ public class GrpcAdminEventClient {
 
     private void connect() {
         try {
+            if (resetCheckpointOnStartup) {
+                LOG.warn("Resetting checkpoint before subscribing to events");
+                checkpointService.resetCheckpoint(workerId, runtimeId, runtimeVersion);
+            }
+
             // 1. Load checkpoint to determine resume position and restore windows
             CheckpointState checkpoint = checkpointService.loadCheckpoint(workerId);
             String afterCursor = null;

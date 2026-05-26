@@ -306,6 +306,17 @@ public class CheckpointService {
         saveCheckpoint(workerId, state);
     }
 
+    public void resetCheckpoint(String workerId, String runtimeId, String runtimeVersion) {
+        saveCheckpoint(workerId, new CheckpointState(
+            "start",  // "start" cursor signals to send the oldest event known
+            Instant.now(),
+            runtimeId,
+            runtimeVersion,
+            Instant.now(),
+            List.of()
+        ));
+    }
+
     @PreDestroy
     void cleanup() {
         if (channel != null && !channel.isShutdown()) {
