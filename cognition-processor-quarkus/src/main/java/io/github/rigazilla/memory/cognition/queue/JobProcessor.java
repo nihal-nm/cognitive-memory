@@ -70,6 +70,9 @@ public class JobProcessor {
     @ConfigProperty(name = "memory-service.api-key")
     String apiKey;
 
+    @ConfigProperty(name = "memory-service.client-id")
+    String clientId;
+
     @ConfigProperty(name = "cognition.runtime.id")
     String runtimeId;
 
@@ -104,7 +107,7 @@ public class JobProcessor {
         channel = ManagedChannelBuilder
             .forAddress(grpcHost, grpcPort)
             .usePlaintext()
-            .intercept(new AuthInterceptor(apiKey))
+            .intercept(new AuthInterceptor(apiKey, clientId))
             .build();
 
         conversationsStub = ConversationsServiceGrpc.newBlockingStub(channel);
@@ -117,9 +120,11 @@ public class JobProcessor {
      */
     private static class AuthInterceptor implements ClientInterceptor {
         private final String apiKey;
+        private final String clientId;
 
-        AuthInterceptor(String apiKey) {
+        AuthInterceptor(String apiKey, String clientId) {
             this.apiKey = apiKey;
+            this.clientId = clientId;
         }
 
         @Override
@@ -131,9 +136,10 @@ public class JobProcessor {
                     next.newCall(method, callOptions)) {
                 @Override
                 public void start(Listener<RespT> responseListener, Metadata headers) {
-                    // Add dual authentication headers (X-API-Key + Authorization)
-                    headers.put(Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    headers.put(Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + apiKey);
+                    // Add authentication headers: X-API-Key, Authorization, and X-Client-ID
+                    headers.put(Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
+                    headers.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + apiKey);
+                    headers.put(Metadata.Key.of("x-client-id", Metadata.ASCII_STRING_MARSHALLER), clientId);
                     super.start(responseListener, headers);
                 }
             };
@@ -245,7 +251,8 @@ public class JobProcessor {
             EvidencePack evidence = transcriptLoader.loadTranscript(
                 job.conversationId(),
                 job.entryIds(),
-                job.previousEntryId()
+                job.previousEntryId(),
+                userId  // Pass conversation owner for on-behalf-of authorization
             );
             LOG.infof("  ✓ Loaded %d transcript entries", evidence.size());
 
@@ -353,6 +360,8 @@ public class JobProcessor {
 
     /**
      * Get the owner user ID for a conversation by loading conversation metadata.
+     * Uses REST Admin API since there's no AdminConversationsService in gRPC.
+     * Note: AdminEntriesService exists for entries, but conversation metadata only has admin access via REST.
      *
      * @param conversationId Conversation UUID string
      * @return Owner user ID
@@ -360,25 +369,50 @@ public class JobProcessor {
      */
     private String getConversationOwner(String conversationId) {
         try {
-            ByteString conversationIdBytes = uuidToBytes(conversationId);
+            // Use REST Admin API: GET /v1/admin/conversations/{id}
+            // Note: There's no AdminConversationsService in gRPC, only REST has admin endpoint
+            String url = String.format("http://%s:%d/v1/admin/conversations/%s",
+                grpcHost, grpcPort, conversationId);
 
-            GetConversationRequest request = GetConversationRequest.newBuilder()
-                .setConversationId(conversationIdBytes)
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(url))
+                .header("Authorization", "Bearer " + apiKey)
+                .header("x-api-key", apiKey)
+                .header("x-client-id", clientId)
+                .header("Content-Type", "application/json")
+                .GET()
                 .build();
 
-            Conversation conversation = conversationsStub.getConversation(request);
+            java.net.http.HttpResponse<String> response = client.send(request,
+                java.net.http.HttpResponse.BodyHandlers.ofString());
 
-            String ownerId = conversation.getOwnerUserId();
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("HTTP " + response.statusCode() + ": " + response.body());
+            }
+
+            // Parse JSON response to extract ownerUserId
+            String responseBody = response.body();
+            LOG.debugf("Conversation metadata response for %s: %s", conversationId, responseBody);
+
+            com.fasterxml.jackson.databind.JsonNode json = objectMapper.readTree(responseBody);
+
+            // Check if ownerUserId field exists
+            com.fasterxml.jackson.databind.JsonNode ownerNode = json.get("ownerUserId");
+            if (ownerNode == null) {
+                java.util.List<String> fieldNames = new java.util.ArrayList<>();
+                json.fieldNames().forEachRemaining(fieldNames::add);
+                LOG.errorf("Response JSON does not contain 'ownerUserId' field. Available fields: %s",
+                    String.join(", ", fieldNames));
+                throw new RuntimeException("ownerUserId field not found in conversation metadata response");
+            }
+
+            String ownerId = ownerNode.asText();
             LOG.debugf("Loaded conversation %s owner: %s", conversationId, ownerId);
-
             return ownerId;
 
-        } catch (StatusRuntimeException e) {
-            Status status = e.getStatus();
-            LOG.errorf(e, "Failed to load conversation metadata for %s: %s", conversationId, status);
-            throw new JobProcessingException("Failed to load conversation metadata for " + conversationId, e);
         } catch (Exception e) {
-            LOG.errorf(e, "Unexpected error loading conversation metadata for %s", conversationId);
+            LOG.errorf(e, "Failed to load conversation metadata for %s", conversationId);
             throw new JobProcessingException("Failed to load conversation metadata for " + conversationId, e);
         }
     }

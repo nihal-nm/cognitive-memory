@@ -36,10 +36,12 @@ import java.util.concurrent.atomic.AtomicLong;
 public class GrpcAdminEventClient {
 
     private static final Logger LOG = Logger.getLogger(GrpcAdminEventClient.class);
-    private static final Metadata.Key<String> API_KEY_HEADER = 
+    private static final Metadata.Key<String> API_KEY_HEADER =
             Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER);
-    private static final Metadata.Key<String> AUTHORIZATION_HEADER = 
+    private static final Metadata.Key<String> AUTHORIZATION_HEADER =
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
+    private static final Metadata.Key<String> CLIENT_ID_HEADER =
+            Metadata.Key.of("x-client-id", Metadata.ASCII_STRING_MARSHALLER);
 
     @ConfigProperty(name = "memory-service.grpc.host", defaultValue = "localhost")
     String grpcHost;
@@ -49,6 +51,9 @@ public class GrpcAdminEventClient {
 
     @ConfigProperty(name = "memory-service.api-key", defaultValue = "admin-api-key-1")
     String apiKey;
+
+    @ConfigProperty(name = "memory-service.client-id", defaultValue = "cognition-processor")
+    String clientId;
 
     @ConfigProperty(name = "cognition.worker.id", defaultValue = "worker-1")
     String workerId;
@@ -126,16 +131,20 @@ public class GrpcAdminEventClient {
     }
 
     private void subscribeToEvents(String afterCursor) {
-        // Create CallCredentials with BOTH X-API-Key and Authorization headers
-        // Memory Service requires both for admin authentication
+        // Create CallCredentials with X-API-Key, Authorization, and X-Client-ID headers
+        // Memory Service requires:
+        // - X-API-Key or Authorization: Bearer token for authentication
+        // - X-Client-ID: to match against MEMORY_SERVICE_ROLES_ADMIN_CLIENTS for admin role
         CallCredentials credentials = new CallCredentials() {
             @Override
             public void applyRequestMetadata(RequestInfo requestInfo, Executor appExecutor, MetadataApplier applier) {
                 Metadata metadata = new Metadata();
-                // X-API-Key header (maps to client ID)
+                // X-API-Key header for API key authentication
                 metadata.put(API_KEY_HEADER, apiKey);
-                // Authorization header with Bearer token
+                // Authorization header with Bearer token (fallback)
                 metadata.put(AUTHORIZATION_HEADER, "Bearer " + apiKey);
+                // X-Client-ID header for role mapping to admin
+                metadata.put(CLIENT_ID_HEADER, clientId);
                 applier.apply(metadata);
             }
 

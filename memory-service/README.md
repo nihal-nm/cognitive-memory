@@ -69,7 +69,7 @@ Or manually copy them to your memory-service directory.
 
 ```bash
 cd ~/git/memory-service  # or wherever you cloned it
-docker compose up -d
+docker compose -f compose.yaml -f compose.override.yaml up -d
 ```
 
 This will start:

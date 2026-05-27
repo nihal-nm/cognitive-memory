@@ -49,6 +49,9 @@ public class CheckpointService {
     @ConfigProperty(name = "memory-service.api-key")
     String apiKey;
 
+    @ConfigProperty(name = "memory-service.client-id")
+    String clientId;
+
     private ManagedChannel channel;
     private AdminCheckpointServiceGrpc.AdminCheckpointServiceBlockingStub checkpointStub;
 
@@ -70,7 +73,7 @@ public class CheckpointService {
         channel = ManagedChannelBuilder
             .forAddress(grpcHost, grpcPort)
             .usePlaintext()
-            .intercept(new AuthInterceptor(apiKey))
+            .intercept(new AuthInterceptor(apiKey, clientId))
             .build();
 
         // Create blocking stub for synchronous checkpoint operations
@@ -84,9 +87,11 @@ public class CheckpointService {
      */
     private static class AuthInterceptor implements ClientInterceptor {
         private final String apiKey;
+        private final String clientId;
 
-        AuthInterceptor(String apiKey) {
+        AuthInterceptor(String apiKey, String clientId) {
             this.apiKey = apiKey;
+            this.clientId = clientId;
         }
 
         @Override
@@ -98,9 +103,10 @@ public class CheckpointService {
                     next.newCall(method, callOptions)) {
                 @Override
                 public void start(Listener<RespT> responseListener, Metadata headers) {
-                    // Add dual authentication headers (X-API-Key + Authorization)
-                    headers.put(Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    headers.put(Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + apiKey);
+                    // Add authentication headers: X-API-Key, Authorization, and X-Client-ID
+                    headers.put(Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
+                    headers.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + apiKey);
+                    headers.put(Metadata.Key.of("x-client-id", Metadata.ASCII_STRING_MARSHALLER), clientId);
                     super.start(responseListener, headers);
                 }
             };

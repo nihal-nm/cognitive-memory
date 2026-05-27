@@ -1,10 +1,10 @@
 package io.github.rigazilla.memory.cognition.evidence;
 
 import com.google.protobuf.ByteString;
+import io.github.chirino.memory.grpc.v1.AdminEntriesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.AdminListEntriesRequest;
 import io.github.chirino.memory.grpc.v1.Channel;
-import io.github.chirino.memory.grpc.v1.EntriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.Entry;
-import io.github.chirino.memory.grpc.v1.ListEntriesRequest;
 import io.github.chirino.memory.grpc.v1.ListEntriesResponse;
 import io.grpc.CallOptions;
 import io.grpc.ClientCall;
@@ -27,24 +27,24 @@ import java.util.UUID;
 
 /**
  * Loads conversation transcript from Memory Service via gRPC.
- * Calls EntriesService.ListEntries to fetch history channel entries.
+ * Uses AdminEntriesService.ListEntries to fetch history channel entries with admin permissions.
  */
 @ApplicationScoped
 public class TranscriptLoader {
-    
+
     private static final Logger LOG = Logger.getLogger(TranscriptLoader.class);
-    
+
     @ConfigProperty(name = "memory-service.grpc.host")
     String grpcHost;
-    
+
     @ConfigProperty(name = "memory-service.grpc.port")
     int grpcPort;
-    
+
     @ConfigProperty(name = "memory-service.api-key")
     String apiKey;
-    
+
     private ManagedChannel channel;
-    private EntriesServiceGrpc.EntriesServiceBlockingStub entriesStub;
+    private AdminEntriesServiceGrpc.AdminEntriesServiceBlockingStub entriesStub;
     
     @PostConstruct
     void init() {
@@ -56,9 +56,9 @@ public class TranscriptLoader {
             .usePlaintext()
             .intercept(new AuthInterceptor(apiKey))
             .build();
-        
-        // Create stub
-        entriesStub = EntriesServiceGrpc.newBlockingStub(channel);
+
+        // Create admin stub (no on-behalf-of needed, admin has full access)
+        entriesStub = AdminEntriesServiceGrpc.newBlockingStub(channel);
         
         LOG.info("TranscriptLoader initialized successfully");
     }
@@ -68,11 +68,11 @@ public class TranscriptLoader {
      */
     private static class AuthInterceptor implements ClientInterceptor {
         private final String apiKey;
-        
+
         AuthInterceptor(String apiKey) {
             this.apiKey = apiKey;
         }
-        
+
         @Override
         public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
                 MethodDescriptor<ReqT, RespT> method,
@@ -90,7 +90,7 @@ public class TranscriptLoader {
             };
         }
     }
-    
+
     @PreDestroy
     void cleanup() {
         if (channel != null && !channel.isShutdown()) {
@@ -105,9 +105,10 @@ public class TranscriptLoader {
      * @param conversationId Conversation UUID
      * @param entryIds List of entry IDs in this batch (in chronological order)
      * @param previousEntryId Entry ID before the first entry in this batch (null for first batch)
+     * @param actorUserId User ID to act on behalf of (conversation owner)
      * @return EvidencePack containing transcript entries
      */
-    public EvidencePack loadTranscript(String conversationId, List<String> entryIds, String previousEntryId) {
+    public EvidencePack loadTranscript(String conversationId, List<String> entryIds, String previousEntryId, String actorUserId) {
         try {
             LOG.debugf("Loading transcript for conversation: %s", conversationId);
             LOG.debugf("  Batch entry count: %d", entryIds.size());
@@ -116,8 +117,8 @@ public class TranscriptLoader {
             // Convert conversation ID string to UUID bytes
             ByteString conversationIdBytes = uuidToBytes(conversationId);
 
-            // Build request for history channel entries with range filter
-            ListEntriesRequest.Builder requestBuilder = ListEntriesRequest.newBuilder()
+            // Build admin request for history channel entries with range filter
+            AdminListEntriesRequest.Builder requestBuilder = AdminListEntriesRequest.newBuilder()
                 .setConversationId(conversationIdBytes)
                 .setChannel(Channel.HISTORY);
 
@@ -135,7 +136,8 @@ public class TranscriptLoader {
                 requestBuilder.setUpToEntryId(lastEntryIdBytes);
             }
 
-            // Call gRPC service
+            // Call admin gRPC service (admin has full access, no on-behalf-of needed)
+            LOG.debugf("Loading transcript with admin permissions for conversation owned by: %s", actorUserId);
             ListEntriesResponse response = entriesStub.listEntries(requestBuilder.build());
             List<Entry> entries = response.getEntriesList();
 
