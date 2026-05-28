@@ -94,7 +94,7 @@ public class GrpcAdminEventClient {
     private void connect() {
         try {
             if (resetCheckpointOnStartup) {
-                LOG.warn("Resetting checkpoint before subscribing to events");
+                LOG.warnf("Resetting checkpoint for worker %s before subscribing to events", workerId);
                 checkpointService.resetCheckpoint(workerId, runtimeId, runtimeVersion);
             }
 
