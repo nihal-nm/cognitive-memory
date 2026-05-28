@@ -2,6 +2,15 @@
     memory-service:
       extra_hosts:
         - "host.docker.internal:host-gateway"
+      environment:
+        # Cognition processor configuration
+        # Define dedicated API key for cognition_processor client
+        # Note: env var name COGNITION_PROCESSOR becomes client ID "cognition_processor" (lowercase with underscore)
+        MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: cognition-processor-key-123
+        # Grant admin role to cognition_processor for event stream access
+        MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: turn_traces_processor,cognition_processor
+        # Grant indexer role to cognition_processor for reading all conversation data
+        MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent,cognition_processor
 
     chat-quarkus:
       extra_hosts:
