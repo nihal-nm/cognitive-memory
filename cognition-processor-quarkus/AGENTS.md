@@ -61,4 +61,4 @@ Never read, print, summarize, parse, or transmit the `.env` file. It may contain
 
 When a new feature is implemented and complete a design description document must be created in the DONE folder. Files there must be prefixed with "NNN-" where NNN is an increasing number.
 
-Future work items, research tasks, and ideas are tracked in the TODO folder as individual markdown files.
+Future work items, research tasks, and ideas are tracked in the TODO folder as individual markdown files. TODO documents should be written to be AI assistant friendly.
