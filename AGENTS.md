@@ -111,5 +111,6 @@ To provide a helpful summary for contributors:
 ## Documentation
 
 - Root README: [README.md](README.md) - Project overview and quick start links
+- Core concepts: [Memory Cognition Architecture](https://github.com/chirino/memory-service/blob/main/docs/memory-cognition.md) - Architecture, goals, and design principles
 - Development docs: [cognition-processor-quarkus/AGENTS.md](cognition-processor-quarkus/AGENTS.md)
 - Implementation spec: [Enhancement 099](https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md)

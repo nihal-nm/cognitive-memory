@@ -7,7 +7,7 @@ A Quarkus-based cognition layer that processes conversation events from [memory-
 - **Memory Service** (substrate layer) - Stores raw conversation data, manages access control
 - **Cognition Processor** (this project) - Processes events to extract derived memories with LLMs
 
-See [cognition-processor-quarkus/AGENTS.md](cognition-processor-quarkus/AGENTS.md) for project overview and [Enhancement 099](https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md) for implementation specification.
+See [Memory Cognition Architecture](https://github.com/chirino/memory-service/blob/main/docs/memory-cognition.md) for core concepts, [cognition-processor-quarkus/AGENTS.md](cognition-processor-quarkus/AGENTS.md) for project overview, and [Enhancement 099](https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md) for implementation specification.
 
 ## Quick Start
 
@@ -54,6 +54,7 @@ We welcome contributions of all kinds - code, documentation, testing, and design
 
 ## Learn More
 
+- [Memory Cognition Architecture](https://github.com/chirino/memory-service/blob/main/docs/memory-cognition.md) - Core concepts and architecture
 - [cognition-processor-quarkus/AGENTS.md](cognition-processor-quarkus/AGENTS.md) - Project context and guidelines
 - [cognition-processor-quarkus/TODO/](cognition-processor-quarkus/TODO/) - Future work items
 - [cognition-processor-quarkus/DONE/](cognition-processor-quarkus/DONE/) - Completed features
