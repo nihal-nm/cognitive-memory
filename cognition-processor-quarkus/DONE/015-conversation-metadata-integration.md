@@ -1,9 +1,16 @@
-# TODO: Conversation Metadata Integration
+# DONE: Conversation Metadata Integration
 
-**Priority**: HIGH  
-**Status**: Blocking proper memory namespace
+**Originally**: HIGH Priority - Blocking proper memory namespace  
+**Status**: ✅ **COMPLETED**  
+**Completed**: Phase 4-6 (see also: `005-conversation-owner-metadata.md`, `013-conversation-metadata-grpc-migration.md`)
 
-## Problem
+## Summary
+
+Successfully migrated JobProcessor to load real user IDs from conversation metadata via AdminConversationsService gRPC. Memories are now written to correct user namespaces (e.g., `["user", "alice", "cognition.v1", "fact"]`), supporting proper multi-user scenarios.
+
+---
+
+## Original Problem Statement
 
 `JobProcessor` uses hardcoded `"user-placeholder"` as userId when writing memories:
 

@@ -1,9 +1,16 @@
-# TODO: Authentication & Authorization
+# DONE: Authentication & Authorization
 
-**Priority**: HIGH  
-**Status**: Blocking end-to-end testing
+**Originally**: HIGH Priority - Blocking end-to-end testing  
+**Status**: ✅ **COMPLETED**  
+**Completed**: Phase 4-6 (see also: `005-conversation-owner-metadata.md`, `013-conversation-metadata-grpc-migration.md`)
 
-## Problem
+## Summary
+
+Successfully implemented RequestActor on-behalf-of authorization pattern. TranscriptLoader now loads conversation metadata to properly authorize reading entries from any conversation. End-to-end testing is now unblocked.
+
+---
+
+## Original Problem Statement
 
 `TranscriptLoader` fails with `PERMISSION_DENIED: forbidden` when calling `EntriesService.ListEntries`.
 

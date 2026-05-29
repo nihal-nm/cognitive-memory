@@ -1,38 +1,36 @@
 # TODO: Remaining Work Items
 
-This directory contains detailed documentation for remaining work items after Phase 3 completion.
+This directory contains detailed documentation for remaining work items after Phase 6 completion.
 
 ## Quick Summary
 
-### HIGH Priority (Blocking Production)
+### ✅ Recently Completed (Phase 4-6)
 
-1. **Authentication & Authorization** (`authentication-authorization.md`)
-   - **Issue**: TranscriptLoader fails with PERMISSION_DENIED when loading conversation entries
-   - **Root Cause**: ListEntries is membership-scoped, admin credentials don't bypass membership checks
-   - **Solution**: Implement RequestActor on-behalf-of authorization
-   - **Status**: Blocking end-to-end testing
+1. **Authentication & Authorization** → `../DONE/014-authentication-authorization.md`
+   - ✅ Implemented RequestActor on-behalf-of authorization
+   - ✅ TranscriptLoader now loads conversation metadata for proper authorization
+   - ✅ End-to-end testing unblocked
 
-2. **Conversation Metadata Integration** (`conversation-metadata.md`)
-   - **Issue**: JobProcessor uses hardcoded "user-placeholder" as userId
-   - **Impact**: All memories written to wrong namespace
-   - **Solution**: Load conversation metadata to get real owner user ID
-   - **Status**: Blocking proper memory scoping
+2. **Conversation Metadata Integration** → `../DONE/015-conversation-metadata-integration.md`
+   - ✅ JobProcessor loads real user IDs from conversation metadata
+   - ✅ Memories now written to correct user namespaces
+   - ✅ Multi-user scenarios properly supported
 
 ### MEDIUM Priority (Quality Improvements)
 
-3. **Configuration Improvements** (`configuration-improvements.md`)
+1. **Configuration Improvements** (`configuration-improvements.md`)
    - **Issue**: Quarkus logs warnings about unrecognized LangChain4j config keys
    - **Impact**: Named model settings may not be applied (temp, model-id, max-tokens)
    - **Solution**: Verify correct Quarkus LangChain4j named model syntax
    - **Status**: Non-blocking, warnings only
 
-4. **Retry Logic** (`retry-logic.md`)
+2. **Retry Logic** (`retry-logic.md`)
    - **Issue**: Failed jobs are logged but not retried
    - **Impact**: Transient failures result in lost processing
    - **Solution**: Implement exponential backoff retry with dead letter queue
    - **Status**: Future enhancement
 
-5. **Testing** (`testing.md`)
+3. **Testing** (`testing.md`)
    - **Issue**: No automated tests (unit or integration)
    - **Impact**: No regression protection, manual testing only
    - **Solution**: Add comprehensive test suite
@@ -40,7 +38,7 @@ This directory contains detailed documentation for remaining work items after Ph
 
 ### LOW Priority (Deferred Features)
 
-6. **Memory Consolidation** (`consolidation.md`)
+4. **Memory Consolidation** (`consolidation.md`)
    - **Issue**: Duplicate memories stored if same facts appear in multiple batches
    - **Impact**: Storage bloat, redundant search results
    - **Solution**: Implement deduplication with semantic similarity
@@ -48,47 +46,46 @@ This directory contains detailed documentation for remaining work items after Ph
 
 ## Implementation Order
 
-### Phase 4 (Next Steps)
-1. Fix authentication/authorization (HIGH)
-2. Fix conversation metadata integration (HIGH)
-3. Verify configuration improvements (MEDIUM)
+### Phase 7 (Next Steps - Quality Improvements)
+1. Verify configuration improvements (MEDIUM)
+2. Add retry logic (MEDIUM)
+3. Add test suite (MEDIUM)
 
-### Phase 5 (Quality)
-4. Add retry logic (MEDIUM)
-5. Add test suite (MEDIUM)
-
-### Phase 6 (Features)
-6. Implement consolidation (LOW)
+### Phase 8 (Future Features)
+4. Implement consolidation (LOW)
 
 ## Quick Links
 
-- **Phase 3 Completion**: `../DONE/003-job-processing-pipeline.md`
-- **Phase 2 Completion**: `../DONE/002-debounce-windows.md`
-- **Phase 1 Completion**: `../DONE/001-event-subscription.md`
+### Recent Completions
+- **Phase 6**: `../DONE/013-conversation-metadata-grpc-migration.md`
+- **Phase 5**: `../DONE/012-grpc-admin-api-migration.md`
+- **Phase 4**: `../DONE/011-window-linking-server-side-filtering.md`
+
+### Earlier Phases
+- **Phase 3**: `../DONE/003-job-processing-pipeline.md`
+- **Phase 2**: `../DONE/002-debounce-windows.md`
+- **Phase 1**: `../DONE/001-event-subscription.md`
 
 ## Current Limitations
 
-From `DONE/003-job-processing-pipeline.md`:
-
-1. ❌ **Authorization gap**: Processor cannot read conversation entries without membership or on-behalf-of
-2. ❌ **User ID placeholder**: All memories written to `["user", "user-placeholder", "cognition.v1", *]`
+1. ✅ ~~**Authorization gap**~~: FIXED - Processor uses RequestActor on-behalf-of authorization
+2. ✅ ~~**User ID placeholder**~~: FIXED - Real user IDs loaded from conversation metadata
 3. ⚠️ **No consolidation**: Duplicate memories will be stored (intentional)
 4. ⚠️ **No retry logic**: Failed jobs are logged but not retried
 5. ⚠️ **Named model config warnings**: LangChain4j config syntax may need adjustment
 
 ## Testing Status
 
-- ✅ Manual end-to-end testing (partial - blocked by auth)
+- ✅ Manual end-to-end testing complete
 - ✅ Event stream connection verified
 - ✅ Debounce window promotion verified
-- ❌ Full pipeline blocked by authorization issue
+- ✅ Full pipeline working (auth + metadata integration complete)
+- ✅ Memories written to correct user namespaces
 - ❌ No automated tests
 
 ## Next Session Actions
 
-1. Choose authorization approach (Option 1, 2, or 3 from `authentication-authorization.md`)
-2. Implement chosen solution
-3. Test end-to-end pipeline with real Ollama
-4. Verify memories written to correct namespace
-5. Consider adding basic retry logic
-6. Consider adding smoke tests
+1. Verify and fix LangChain4j configuration warnings
+2. Consider implementing retry logic for transient failures
+3. Add comprehensive test suite (unit + integration)
+4. Evaluate memory consolidation/deduplication approach
