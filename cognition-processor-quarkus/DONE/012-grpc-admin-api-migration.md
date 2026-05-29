@@ -171,38 +171,39 @@ The admin API key must be configured in memory-service with:
 - ✅ `AdminEventsService` - used for event streaming
 - ✅ `AdminEntriesService` - used for entry loading
 - ✅ `AdminCheckpointService` - used for checkpointing (in `CheckpointService`)
-- ❌ `AdminConversationsService` - **does not exist** (REST fallback required)
+- ✅ `AdminConversationsService` - **migrated 2026-05-29** (see DONE/013)
 
-**Result:** 75% gRPC coverage (3 out of 4 operations)
+**Result:** 100% gRPC coverage (4 out of 4 operations) ✅
+
+**Update 2026-05-29**: The REST fallback for conversation metadata has been eliminated. See [DONE/013-conversation-metadata-grpc-migration.md](013-conversation-metadata-grpc-migration.md) for details on the completion of this migration.
 
 ## Future Improvements
 
-### Option 1: Add AdminConversationsService to memory-service
+~~### Option 1: Add AdminConversationsService to memory-service~~ ✅ **Completed 2026-05-29**
 
-If memory-service adds `AdminConversationsService` to gRPC, we can migrate the last REST call:
+memory-service PR #197 added `AdminConversationsService` to gRPC, and the migration was completed on 2026-05-29. The cognition processor now uses:
 
 ```java
-// Future gRPC approach (when available)
 import io.github.chirino.memory.grpc.v1.AdminConversationsServiceGrpc;
 
 AdminGetConversationRequest request = AdminGetConversationRequest.newBuilder()
     .setConversationId(conversationIdBytes)
     .build();
 
-Conversation conversation = adminConversationsStub.getConversation(request);
+AdminConversation conversation = adminConversationsStub.getConversation(request);
 String ownerId = conversation.getOwnerUserId();
 ```
 
-This would achieve **100% gRPC** usage.
+**100% gRPC usage achieved.**
 
-### Option 2: Cache Conversation Metadata
+### Option 2: Cache Conversation Metadata (not implemented)
 
 Since conversation owner rarely changes, we could cache the owner ID:
-- First lookup: REST call
+- First lookup: gRPC call
 - Subsequent lookups: in-memory cache
 - Cache invalidation: on conversation update events
 
-This would reduce REST calls to ~1 per conversation.
+This would reduce gRPC calls to ~1 per conversation. However, given gRPC's efficiency, this optimization is not currently prioritized.
 
 ## Testing
 

@@ -2,9 +2,9 @@ package io.github.rigazilla.memory.cognition.queue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.ByteString;
-import io.github.chirino.memory.grpc.v1.Conversation;
-import io.github.chirino.memory.grpc.v1.ConversationsServiceGrpc;
-import io.github.chirino.memory.grpc.v1.GetConversationRequest;
+import io.github.chirino.memory.grpc.v1.AdminConversation;
+import io.github.chirino.memory.grpc.v1.AdminConversationsServiceGrpc;
+import io.github.chirino.memory.grpc.v1.AdminGetConversationRequest;
 import io.github.rigazilla.memory.cognition.event.ScopeJob;
 import io.github.rigazilla.memory.cognition.evidence.EvidencePack;
 import io.github.rigazilla.memory.cognition.evidence.TranscriptLoader;
@@ -95,7 +95,7 @@ public class JobProcessor {
     MemoryWriter memoryWriter;
 
     private ManagedChannel channel;
-    private ConversationsServiceGrpc.ConversationsServiceBlockingStub conversationsStub;
+    private AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub conversationsStub;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -110,7 +110,7 @@ public class JobProcessor {
             .intercept(new AuthInterceptor(apiKey, clientId))
             .build();
 
-        conversationsStub = ConversationsServiceGrpc.newBlockingStub(channel);
+        conversationsStub = AdminConversationsServiceGrpc.newBlockingStub(channel);
 
         LOG.info("JobProcessor gRPC clients initialized successfully");
     }
@@ -359,9 +359,8 @@ public class JobProcessor {
     }
 
     /**
-     * Get the owner user ID for a conversation by loading conversation metadata.
-     * Uses REST Admin API since there's no AdminConversationsService in gRPC.
-     * Note: AdminEntriesService exists for entries, but conversation metadata only has admin access via REST.
+     * Get the owner user ID for a conversation by loading conversation metadata via gRPC.
+     * Uses AdminConversationsService which provides admin access without requiring membership.
      *
      * @param conversationId Conversation UUID string
      * @return Owner user ID
@@ -369,50 +368,25 @@ public class JobProcessor {
      */
     private String getConversationOwner(String conversationId) {
         try {
-            // Use REST Admin API: GET /v1/admin/conversations/{id}
-            // Note: There's no AdminConversationsService in gRPC, only REST has admin endpoint
-            String url = String.format("http://%s:%d/v1/admin/conversations/%s",
-                grpcHost, grpcPort, conversationId);
+            ByteString conversationIdBytes = uuidToBytes(conversationId);
 
-            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
-            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
-                .uri(java.net.URI.create(url))
-                .header("Authorization", "Bearer " + apiKey)
-                .header("x-api-key", apiKey)
-                .header("x-client-id", clientId)
-                .header("Content-Type", "application/json")
-                .GET()
+            AdminGetConversationRequest request = AdminGetConversationRequest.newBuilder()
+                .setConversationId(conversationIdBytes)
                 .build();
 
-            java.net.http.HttpResponse<String> response = client.send(request,
-                java.net.http.HttpResponse.BodyHandlers.ofString());
+            AdminConversation conversation = conversationsStub.getConversation(request);
 
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("HTTP " + response.statusCode() + ": " + response.body());
-            }
-
-            // Parse JSON response to extract ownerUserId
-            String responseBody = response.body();
-            LOG.debugf("Conversation metadata response for %s: %s", conversationId, responseBody);
-
-            com.fasterxml.jackson.databind.JsonNode json = objectMapper.readTree(responseBody);
-
-            // Check if ownerUserId field exists
-            com.fasterxml.jackson.databind.JsonNode ownerNode = json.get("ownerUserId");
-            if (ownerNode == null) {
-                java.util.List<String> fieldNames = new java.util.ArrayList<>();
-                json.fieldNames().forEachRemaining(fieldNames::add);
-                LOG.errorf("Response JSON does not contain 'ownerUserId' field. Available fields: %s",
-                    String.join(", ", fieldNames));
-                throw new RuntimeException("ownerUserId field not found in conversation metadata response");
-            }
-
-            String ownerId = ownerNode.asText();
+            String ownerId = conversation.getOwnerUserId();
             LOG.debugf("Loaded conversation %s owner: %s", conversationId, ownerId);
+
             return ownerId;
 
+        } catch (StatusRuntimeException e) {
+            Status status = e.getStatus();
+            LOG.errorf(e, "Failed to load conversation metadata for %s: %s", conversationId, status);
+            throw new JobProcessingException("Failed to load conversation metadata for " + conversationId, e);
         } catch (Exception e) {
-            LOG.errorf(e, "Failed to load conversation metadata for %s", conversationId);
+            LOG.errorf(e, "Unexpected error loading conversation metadata for %s", conversationId);
             throw new JobProcessingException("Failed to load conversation metadata for " + conversationId, e);
         }
     }
