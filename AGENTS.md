@@ -95,6 +95,19 @@ Note: The cognition processor logs to `logs/quarkus.log` as configured in `appli
 - **`memory-service/`** - Quick start configuration for memory-service
 - **`quarkus-cognitive-memory/`** - Alternative/older implementation
 
+## How to Contribute
+
+When a user wants to contribute or asks what they can work on, check these sources:
+
+1. **TODO folder**: [cognition-processor-quarkus/TODO/](cognition-processor-quarkus/TODO/) - Contains informal task lists and documentation gaps
+2. **GitHub Issues**: Fetch open issues from the project's GitHub repository to see current bugs, feature requests, and planned work
+
+To provide a helpful summary for contributors:
+- Read the TODO files to understand informal task lists and priorities
+- Use `gh issue list` (via Bash) to fetch current open issues
+- Summarize available work items categorized by type (bugs, features, docs, tests, etc.)
+- Highlight good first issues or high-priority items when available
+
 ## Documentation
 
 - Root README: [README.md](README.md) - Project overview and quick start links

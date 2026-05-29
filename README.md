@@ -35,6 +35,23 @@ Run the Quarkus cognition processor:
 
 → [cognition-processor-quarkus/README.md](cognition-processor-quarkus/README.md)
 
+## How to Contribute
+
+This project is primarily developed with AI assistance. To get started:
+
+1. **Get a task summary** - Ask your AI agent:
+   ```
+   Please read the AGENTS.md and provide a summary of available TODO tasks
+   ```
+
+2. **Your agent will check**:
+   - [cognition-processor-quarkus/TODO/](cognition-processor-quarkus/TODO/) - Informal task lists
+   - GitHub Issues - Current bugs and feature requests
+
+3. **Work with your AI assistant** to implement features, fix bugs, or improve documentation
+
+We welcome contributions of all kinds - code, documentation, testing, and design improvements!
+
 ## Learn More
 
 - [cognition-processor-quarkus/AGENTS.md](cognition-processor-quarkus/AGENTS.md) - Project context and guidelines
