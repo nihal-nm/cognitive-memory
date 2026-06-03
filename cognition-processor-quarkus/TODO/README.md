@@ -44,6 +44,12 @@ This directory contains detailed documentation for remaining work items after Ph
    - **Solution**: Implement deduplication with semantic similarity
    - **Status**: Intentionally deferred to future phase
 
+5. **Profile Context Snapshots** (`profile-context-snapshots.md`)
+   - **Issue**: Agents need compact initial user context, not only raw memory search results
+   - **Impact**: Repeated context gathering and weaker continuity across sessions
+   - **Solution**: Nightly consolidation into a governed profile context memory
+   - **Status**: Future enhancement
+
 ## Implementation Order
 
 ### Phase 7 (Next Steps - Quality Improvements)
@@ -53,6 +59,7 @@ This directory contains detailed documentation for remaining work items after Ph
 
 ### Phase 8 (Future Features)
 4. Implement consolidation (LOW)
+5. Implement profile context snapshots (MEDIUM)
 
 ## Quick Links
 
@@ -73,6 +80,7 @@ This directory contains detailed documentation for remaining work items after Ph
 3. ⚠️ **No consolidation**: Duplicate memories will be stored (intentional)
 4. ⚠️ **No retry logic**: Failed jobs are logged but not retried
 5. ⚠️ **Named model config warnings**: LangChain4j config syntax may need adjustment
+6. ⚠️ **No profile context snapshot**: Agents must assemble initial user context from raw memories
 
 ## Testing Status
 
@@ -89,3 +97,4 @@ This directory contains detailed documentation for remaining work items after Ph
 2. Consider implementing retry logic for transient failures
 3. Add comprehensive test suite (unit + integration)
 4. Evaluate memory consolidation/deduplication approach
+5. Design profile context snapshot extraction and nightly consolidation
