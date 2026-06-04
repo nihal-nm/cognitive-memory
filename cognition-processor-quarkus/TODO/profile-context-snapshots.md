@@ -466,3 +466,54 @@ An agent can use profile context as a fast initial memory product:
 - Builds on `consolidation.md` by applying deduplication and conflict handling to a specific derived memory product.
 - Related to `prompt-example-contamination.md` because profile prompts must avoid leaking example content into extracted memories or snapshots.
 - Benefits from `testing.md` because snapshot quality needs regression coverage.
+
+
+
+---
+
+## Reviewer Feedback: Phase 0 Prototype Recommendation
+
+**Added during PR #5 review** - This minimal prototype phase is recommended to validate the core concept before committing to the full 4-phase implementation.
+
+### Scope
+
+**3 Core Sections:**
+- Profile Snapshot (identity/role)
+- Active Goals (current work)
+- Preferences (working style)
+
+**Implementation:**
+- Manual trigger: `POST /api/consolidate/{userId}`
+- LLM-based consolidation of existing memories
+- Simple schema: confidence + source memory keys
+- Write to: `["user", userId, "cognition.v1", "profile_context"]` key `"latest"`
+- No scheduling, no extended metadata, no conflict resolution
+
+### Retrieval Test
+
+```bash
+# Trigger consolidation
+curl -X POST http://localhost:8090/api/consolidate/alice
+
+# Fetch snapshot
+curl -X POST http://localhost:8082/v1/memories/search \
+  -H "Authorization: Bearer cognition-processor-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "namespace_prefix": ["user", "alice", "cognition.v1", "profile_context"],
+    "key": "latest"
+  }'
+```
+
+Verify:
+- Content is coherent markdown with 3 sections
+- Provenance links trace back to source conversations
+
+### What to Validate
+
+1. **Usefulness** - Is generated profile valuable for agent context?
+2. **LLM viability** - Quality, cost, latency acceptable?
+3. **Schema sufficiency** - Does simple structure work?
+4. **Missing features** - What's actually needed vs. nice-to-have?
+
+**Success = Concept proven, informed decisions for Phase 1**
