@@ -48,6 +48,17 @@ For a general description of the whole project see https://github.com/chirino/me
 
 There are guidelines for the implementation at https://github.com/chirino/memory-service/blob/main/docs/enhancements/099-quarkus-cognition-processor.md. It's strongly reccomended to follow them when writing new code, but it's not mandatory. You must inform the user if you plan to not follow the guidelines.
 
+## Implementing new cognitive processes
+
+When adding a new managed cognitive process:
+
+- it must be discoverable/registered so it appears in the process registry and management API
+- it must provide a stable registration-time state using `ENABLED` or `DISABLED`
+- it may expose `details` for live operational data
+- if `details` contains runtime-dependent values, those values should be computed at inspection time
+
+Do not require runtime `details` for every process. If a process has no meaningful live operational data yet, it can expose empty or minimal inspection details.
+
 ## Documentation
 
 - **Core concepts**: https://chirino.github.io/memory-service/docs/concepts/ - Essential memory-service concepts (conversations, entries, memories, access control) that the cognition layer builds upon
