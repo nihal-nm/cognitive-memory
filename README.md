@@ -1,3 +1,11 @@
+<div align="right">
+
+> "Memory is like fiction; or else it's fiction that's like memory."
+>
+> — Haruki Murakami
+
+</div>
+
 # Cognitive Memory
 
 A Quarkus-based cognition layer that processes conversation events from [memory-service](https://github.com/chirino/memory-service) to extract and organize structured memories (topics, facts, preferences, etc.).
