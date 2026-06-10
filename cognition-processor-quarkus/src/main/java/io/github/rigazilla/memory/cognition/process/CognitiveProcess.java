@@ -1,5 +1,7 @@
 package io.github.rigazilla.memory.cognition.process;
 
+import io.github.rigazilla.memory.cognition.resource.ResourceRequirements;
+
 /**
  * Common contract for managed cognitive processes.
  */
@@ -31,5 +33,15 @@ public interface CognitiveProcess {
 
     default void disable() {
         throw new UnsupportedOperationException("disable is not implemented for process " + id());
+    }
+
+    /**
+     * Get resource requirements for this process.
+     * Returns null to use global defaults only.
+     * 
+     * @return The resource requirements, or null for global defaults
+     */
+    default ResourceRequirements getResourceRequirements() {
+        return null;
     }
 }
