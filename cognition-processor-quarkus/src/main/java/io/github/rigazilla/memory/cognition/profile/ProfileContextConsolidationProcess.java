@@ -7,6 +7,7 @@ import io.github.rigazilla.memory.cognition.resource.LlmResourceConfiguration;
 import io.github.rigazilla.memory.cognition.resource.ResourceRequirements;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
@@ -28,6 +29,15 @@ public class ProfileContextConsolidationProcess implements CognitiveProcess {
     
     @Inject
     ProfileContextService profileContextService;
+
+    @ConfigProperty(name = "cognition.resources.default.llm.model")
+    String defaultModel;
+
+    @ConfigProperty(name = "cognition.resources.default.llm.base-url")
+    String defaultBaseUrl;
+
+    @ConfigProperty(name = "cognition.resources.default.llm.provider")
+    String defaultProvider;
     
     private final AtomicReference<Instant> lastRunTime = new AtomicReference<>();
     private final AtomicReference<String> lastRunStatus = new AtomicReference<>("never_run");
@@ -76,13 +86,42 @@ public class ProfileContextConsolidationProcess implements CognitiveProcess {
         details.put("lastRunStatus", lastRunStatus.get());
         details.put("lastRunUserId", lastRunUserId.get() != null ? lastRunUserId.get() : "none");
         
-        // Add resource type information
+        // Add resource type information with prompts
         ResourceRequirements requirements = getResourceRequirements();
         if (requirements != null) {
-            Map<String, String> resourceTypes = new LinkedHashMap<>();
-            requirements.getAllResources().forEach((name, config) -> 
-                resourceTypes.put(name, config.getType().name())
-            );
+            Map<String, Map<String, String>> resourceTypes = new LinkedHashMap<>();
+            requirements.getAllResources().forEach((name, config) -> {
+                Map<String, String> resourceInfo = new LinkedHashMap<>();
+                resourceInfo.put("type", config.getType().name());
+                
+                // Add prompt content for LLM resources
+                if (config.getType() == io.github.rigazilla.memory.cognition.resource.ResourceType.LLM) {
+                    // Add model and endpoint information
+                    resourceInfo.put("model", defaultModel);
+                    resourceInfo.put("endpoint", defaultBaseUrl);
+                    resourceInfo.put("provider", defaultProvider);
+                    
+                    String promptPath = switch (name) {
+                        case "consolidator" -> "prompts/profile-consolidator-system.md";
+                        default -> null;
+                    };
+                    if (promptPath != null) {
+                        try {
+                            String promptContent = new String(
+                                getClass().getClassLoader()
+                                    .getResourceAsStream(promptPath)
+                                    .readAllBytes()
+                            );
+                            resourceInfo.put("prompt", promptContent);
+                        } catch (Exception e) {
+                            LOG.warnf("Failed to load prompt from %s: %s", promptPath, e.getMessage());
+                            resourceInfo.put("prompt", "Error loading prompt: " + promptPath);
+                        }
+                    }
+                }
+                
+                resourceTypes.put(name, resourceInfo);
+            });
             details.put("resourceTypes", resourceTypes);
         }
         
