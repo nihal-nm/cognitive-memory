@@ -96,6 +96,16 @@ public class GrpcAdminEventClient {
         saveCheckpoint();
     }
 
+    public synchronized void startIfNeeded() {
+        if (connected.get()) {
+            LOG.debug("GrpcAdminEventClient already connected");
+            return;
+        }
+
+        shouldReconnect.set(true);
+        connect();
+    }
+
     private void connect() {
         try {
             if (resetCheckpointOnStartup) {
