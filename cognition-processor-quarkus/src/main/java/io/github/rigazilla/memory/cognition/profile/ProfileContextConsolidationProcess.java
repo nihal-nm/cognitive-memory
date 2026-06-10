@@ -76,6 +76,16 @@ public class ProfileContextConsolidationProcess implements CognitiveProcess {
         details.put("lastRunStatus", lastRunStatus.get());
         details.put("lastRunUserId", lastRunUserId.get() != null ? lastRunUserId.get() : "none");
         
+        // Add resource type information
+        ResourceRequirements requirements = getResourceRequirements();
+        if (requirements != null) {
+            Map<String, String> resourceTypes = new LinkedHashMap<>();
+            requirements.getAllResources().forEach((name, config) -> 
+                resourceTypes.put(name, config.getType().name())
+            );
+            details.put("resourceTypes", resourceTypes);
+        }
+        
         return new ManagedProcessInspection(
             id(),
             displayName(),

@@ -73,6 +73,16 @@ public class DurableMemoryExtractionProcess implements CognitiveProcess {
         details.put("totalQueues", stats.totalQueues());
         details.put("activeQueues", stats.activeQueues());
         details.put("pendingJobs", stats.pendingJobs());
+        
+        // Add resource type information
+        ResourceRequirements requirements = getResourceRequirements();
+        if (requirements != null) {
+            Map<String, String> resourceTypes = new LinkedHashMap<>();
+            requirements.getAllResources().forEach((name, config) -> 
+                resourceTypes.put(name, config.getType().name())
+            );
+            details.put("resourceTypes", resourceTypes);
+        }
 
         return new ManagedProcessInspection(
             id(),
