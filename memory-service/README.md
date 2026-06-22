@@ -83,10 +83,10 @@ This will start:
 Check that memory-service is healthy:
 
 ```bash
-curl http://localhost:8082/q/health
+curl http://localhost:8082/v1/health
 ```
 
-You should see a health check response with status "UP".
+You should see a health check response with status "ok".
 
 ### 5. Test with the sample app
 

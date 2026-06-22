@@ -22,6 +22,18 @@ Before starting, **ask the user**:
    - Option A: Native Ollama (installed on host)
    - Option B: Docker Ollama (in a container)
 
+3. **If using Docker Ollama, check for existing containers first:**
+   ```bash
+   docker ps -a | grep ollama
+   ```
+   - If an existing Ollama container is found, ask the user if they want to reuse it
+   - If reusing: Check if it's running (restart with `docker start <name>` if stopped)
+   - If not reusing or none exists: Create a new container with persistent storage:
+     ```bash
+     docker run -d -p 11434:11434 -v ollama-data:/root/.ollama --name ollama ollama/ollama:latest
+     ```
+     The `-v ollama-data:/root/.ollama` flag creates a persistent volume for models, so they survive container removal and can be reused by new containers.
+
 Then follow the setup instructions in:
 → [memory-service/README.md](memory-service/README.md)
 
