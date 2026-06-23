@@ -383,9 +383,20 @@ public class DirtyWindowRegistry {
     }
     
     /**
-     * Clear all windows (for testing).
+     * Clear all windows.
+     * Used for testing and when handling invalidate events (cursor beyond retention window).
      */
     public void clear() {
-        windows.clear();
+        promotionLock.lock();
+        try {
+            int count = windows.size();
+            windows.clear();
+            lastPromotedEntryId.clear();
+            if (count > 0) {
+                LOG.infof("Cleared %d dirty windows", count);
+            }
+        } finally {
+            promotionLock.unlock();
+        }
     }
 }

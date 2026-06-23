@@ -263,6 +263,12 @@ public class GrpcAdminEventClient {
             }
             LOG.infof("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+            // Handle invalidate events (stale cursor, missed events)
+            if ("invalidate".equals(eventType) && "stream".equals(kind)) {
+                handleInvalidateEvent(jsonData);
+                return;
+            }
+
             // Accept event into dirty window registry (if it has a conversation ID)
             if (conversationId != null && cursor != null) {
                 windowRegistry.acceptEvent(conversationId, cursor, entryId, Instant.now());
@@ -275,6 +281,46 @@ public class GrpcAdminEventClient {
 
         } catch (Exception e) {
             LOG.errorf(e, "Error handling event");
+        }
+    }
+
+    /**
+     * Handle invalidate stream events (cursor beyond retention window).
+     * When the checkpoint cursor is older than the event retention window,
+     * memory-service sends an invalidate event. We must reset and start fresh.
+     */
+    private void handleInvalidateEvent(String jsonData) {
+        String reason = extractJsonField(jsonData, "reason");
+
+        if ("cursor beyond retention window".equals(reason)) {
+            LOG.warnf("⚠️  INVALIDATE EVENT: Checkpoint cursor is beyond retention window");
+            LOG.warnf("⚠️  There is a gap in event coverage - some events were missed");
+            LOG.warnf("⚠️  Resetting checkpoint and clearing dirty windows");
+            LOG.warnf("⚠️  Will reconnect and start receiving new events from now forward");
+
+            // Reset checkpoint - the stored cursor is no longer valid
+            try {
+                checkpointService.resetCheckpoint(workerId, runtimeId, runtimeVersion);
+                LOG.info("✓ Checkpoint reset successful");
+            } catch (Exception e) {
+                LOG.errorf(e, "Failed to reset checkpoint");
+            }
+
+            // Clear dirty windows - any in-progress work is potentially incomplete
+            try {
+                windowRegistry.clear();
+                LOG.info("✓ Dirty windows cleared");
+            } catch (Exception e) {
+                LOG.errorf(e, "Failed to clear dirty windows");
+            }
+
+            // Disconnect and reconnect without cursor to start fresh
+            shouldReconnect.set(true);
+            disconnect();
+            scheduleReconnect();
+
+        } else {
+            LOG.warnf("⚠️  INVALIDATE EVENT: %s", reason != null ? reason : "(unknown reason)");
         }
     }
 
