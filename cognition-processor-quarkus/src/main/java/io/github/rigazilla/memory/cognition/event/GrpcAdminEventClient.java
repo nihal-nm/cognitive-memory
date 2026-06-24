@@ -427,4 +427,12 @@ public class GrpcAdminEventClient {
     public int getWindowCount() {
         return windowRegistry.getWindowCount();
     }
+    
+    public String getHost() {
+        return grpcHost;
+    }
+    
+    public int getPort() {
+        return grpcPort;
+    }
 }

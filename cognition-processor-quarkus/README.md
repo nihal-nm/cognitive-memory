@@ -26,7 +26,10 @@ Think of it as the "intelligence" that turns raw conversation transcripts into s
 
 2. **Verify it's running**:
    - Check logs for "Started AdminEventClient - connected to memory-service"
-   - Visit http://localhost:8090 for health checks
+   - Health checks:
+     - Liveness: http://localhost:8090/q/health/live
+     - Readiness: http://localhost:8090/q/health/ready (includes gRPC connection status)
+     - Full health: http://localhost:8090/q/health
 
 The processor will automatically:
 - Subscribe to memory-service events
@@ -49,6 +52,57 @@ Default configuration works with local development setup. Key settings in `src/m
 - Memory Service connection: `memory-service.grpc.host` / `memory-service.grpc.port`
 - LLM provider: `quarkus.langchain4j.*.chat-model.provider` (default: Ollama)
 - Models: `memory` model for extraction/verification, `topic-summary` for summaries
+
+Environment variable examples:
+- `.env.example` for local host-based runs
+- `.env.docker.example` for Docker-based dev/test runs
+
+## Docker Dev/Test
+
+A JVM-based Docker setup is included for local integration testing.
+
+### Prerequisites
+- Docker
+- Memory Service running on the host at `http://localhost:8082`
+- Optional Ollama running on the host at `http://localhost:11434` if you use Ollama-backed models
+
+### Build the application
+```bash
+./mvnw package
+```
+
+### Configure Docker runtime
+```bash
+cp .env.docker.example .env.docker
+```
+
+Then edit `.env.docker` as needed:
+- set `OPENAI_API_KEY` if using the default OpenAI-compatible memory model configuration
+- or switch the memory model provider to Ollama using the commented examples in `.env.docker.example`
+
+### Start the container
+```bash
+docker compose up --build
+```
+
+The containerized cognition processor will be available on:
+- `http://localhost:8090`
+
+### Logs
+Container logs:
+```bash
+docker compose logs -f cognition-processor
+```
+
+Persisted Quarkus log file:
+```bash
+tail -f logs/quarkus.log
+```
+
+### Notes
+- The compose file maps `host.docker.internal` so the container can reach host services on Linux
+- The container expects Memory Service on `host.docker.internal:8082`
+- The compose file mounts `./logs` to `/deployments/logs` so file logging remains available
 
 ## Project Status
 
