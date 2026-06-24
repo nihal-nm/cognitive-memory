@@ -38,8 +38,16 @@ nb-configuration.xml
 
 # Local environment
 .env
+.env.docker
 
 # Plugin directory
 /.quarkus/cli/plugins/
 # TLS Certificates
 .certs/
+
+# Logs
+logs/
+quarkus-output.log
+
+# Test/debug files
+saved.*.txt
