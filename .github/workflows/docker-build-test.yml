@@ -54,9 +54,11 @@ jobs:
         with:
           images: quay.io/${{ inputs.quay_repo }}
           tags: |
+            type=ref,event=pr,prefix=pr-
             type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=raw,value=cd-latest
+            type=sha,prefix=pr-${{ github.event.pull_request.number }}-,enable=${{ github.event_name == 'pull_request' }}
+            type=sha,prefix={{branch}}-,enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=cd-latest,enable=${{ github.event_name != 'pull_request' }}
 
       - name: Build Docker image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
