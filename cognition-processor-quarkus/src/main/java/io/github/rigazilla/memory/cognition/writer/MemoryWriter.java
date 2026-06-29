@@ -109,6 +109,8 @@ public class MemoryWriter {
                 .addAllNamespace(namespace)
                 .setKey(key)
                 .setValue(value)
+                .putIndex("content", candidate.content())
+                .putIndex("type", candidate.type())
                 .setActor(RequestActor.newBuilder()
                     .setOnBehalfOfUserId(userId)
                     .build())
