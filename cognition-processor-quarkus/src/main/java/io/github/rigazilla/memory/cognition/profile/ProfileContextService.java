@@ -2,12 +2,14 @@ package io.github.rigazilla.memory.cognition.profile;
 
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
-import io.github.chirino.memory.grpc.v1.MemoriesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.MemoryItem;
+import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
 import io.github.chirino.memory.grpc.v1.RequestActor;
-import io.github.chirino.memory.grpc.v1.SearchMemoriesRequest;
-import io.github.chirino.memory.grpc.v1.SearchMemoriesResponse;
+import io.github.chirino.memory.grpc.v1.AdminSearchMemoriesRequest;
+import io.github.chirino.memory.grpc.v1.AdminSearchMemoriesResponse;
+import java.util.stream.Collectors;
 import io.github.rigazilla.memory.cognition.writer.MemoryWriter;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -18,6 +20,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +54,7 @@ public class ProfileContextService {
     MemoryWriter memoryWriter;
     
     private ManagedChannel channel;
-    private MemoriesServiceGrpc.MemoriesServiceBlockingStub memoriesStub;
+    private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
     
     @PostConstruct
     void init() {
@@ -64,7 +67,8 @@ public class ProfileContextService {
             .intercept(new AuthInterceptor(apiKey))
             .build();
         
-        memoriesStub = MemoriesServiceGrpc.newBlockingStub(channel);
+        // Use admin stub for searching and writing memories on behalf of users
+        memoriesStub = AdminMemoriesServiceGrpc.newBlockingStub(channel);
         
         LOG.info("ProfileContextService initialized successfully");
     }
@@ -114,18 +118,53 @@ public class ProfileContextService {
      */
     private List<MemoryItem> queryUserMemories(String userId) {
         try {
-            SearchMemoriesRequest request = SearchMemoriesRequest.newBuilder()
+            // Use admin search with as_user_id to scope to this user's namespace
+            AdminSearchMemoriesRequest request = AdminSearchMemoriesRequest.newBuilder()
                 .addNamespacePrefix("user")
                 .addNamespacePrefix(userId)
                 .addNamespacePrefix(COGNITION_VERSION)
-                .setActor(RequestActor.newBuilder()
-                    .setOnBehalfOfUserId(userId)
-                    .build())
+                .setAsUserId(userId)  // Admin scoping to user's namespace
                 .setLimit(100)  // Reasonable limit for Phase 0
                 .build();
-            
-            SearchMemoriesResponse response = memoriesStub.searchMemories(request);
-            return response.getItemsList();
+
+            AdminSearchMemoriesResponse response = memoriesStub.searchMemories(request);
+            // Convert AdminMemoryItem to MemoryItem
+            return response.getItemsList().stream()
+                .map(adminItem -> {
+                    // Convert Timestamp to ISO-8601 string
+                    String createdAt = Instant.ofEpochSecond(
+                        adminItem.getCreatedAt().getSeconds(),
+                        adminItem.getCreatedAt().getNanos()
+                    ).toString();
+
+                    MemoryItem.Builder builder = MemoryItem.newBuilder()
+                        .setId(adminItem.getId())
+                        .addAllNamespace(adminItem.getNamespaceList())
+                        .setKey(adminItem.getKey())
+                        .setValue(adminItem.getValue())
+                        .setCreatedAt(createdAt)
+                        .setArchived(adminItem.getArchived());
+
+                    if (adminItem.hasAttributes()) {
+                        builder.setAttributes(adminItem.getAttributes());
+                    }
+                    if (adminItem.hasScore()) {
+                        builder.setScore(adminItem.getScore());
+                    }
+                    if (adminItem.hasExpiresAt()) {
+                        String expiresAt = Instant.ofEpochSecond(
+                            adminItem.getExpiresAt().getSeconds(),
+                            adminItem.getExpiresAt().getNanos()
+                        ).toString();
+                        builder.setExpiresAt(expiresAt);
+                    }
+                    if (adminItem.hasUsage()) {
+                        builder.setUsage(adminItem.getUsage());
+                    }
+
+                    return builder.build();
+                })
+                .collect(Collectors.toList());
             
         } catch (Exception e) {
             LOG.errorf(e, "Failed to query memories for user %s", userId);
@@ -207,9 +246,8 @@ public class ProfileContextService {
                     next.newCall(method, callOptions)) {
                 @Override
                 public void start(Listener<RespT> responseListener, io.grpc.Metadata headers) {
-                    // Add authentication headers
+                    // Add authentication header
                     headers.put(io.grpc.Metadata.Key.of("X-API-Key", io.grpc.Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    headers.put(io.grpc.Metadata.Key.of("Authorization", io.grpc.Metadata.ASCII_STRING_MARSHALLER), "Bearer " + apiKey);
                     super.start(responseListener, headers);
                 }
             };

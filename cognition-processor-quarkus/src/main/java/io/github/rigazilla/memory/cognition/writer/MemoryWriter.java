@@ -4,7 +4,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
-import io.github.chirino.memory.grpc.v1.MemoriesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.PutMemoryRequest;
 import io.github.chirino.memory.grpc.v1.RequestActor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
@@ -47,7 +47,7 @@ public class MemoryWriter {
     String apiKey;
     
     private ManagedChannel channel;
-    private MemoriesServiceGrpc.MemoriesServiceBlockingStub memoriesStub;
+    private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
     
     @PostConstruct
     void init() {
@@ -60,8 +60,8 @@ public class MemoryWriter {
             .intercept(new AuthInterceptor(apiKey))
             .build();
         
-        // Create stub
-        memoriesStub = MemoriesServiceGrpc.newBlockingStub(channel);
+        // Create admin stub for writing memories on behalf of users
+        memoriesStub = AdminMemoriesServiceGrpc.newBlockingStub(channel);
         
         LOG.info("MemoryWriter initialized successfully");
     }
@@ -253,9 +253,8 @@ public class MemoryWriter {
                     next.newCall(method, callOptions)) {
                 @Override
                 public void start(Listener<RespT> responseListener, Metadata headers) {
-                    // Add authentication headers
+                    // Add authentication header
                     headers.put(Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    headers.put(Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + apiKey);
                     super.start(responseListener, headers);
                 }
             };
