@@ -3,27 +3,36 @@ name: CI
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
-      
+
       - name: Build with Maven
         run: ./mvnw -B clean package -DskipTests
         working-directory: cognition-processor-quarkus
-      
+
       - name: Run tests
         run: ./mvnw -B test
         working-directory: cognition-processor-quarkus
+
+  docker-build-and-test:
+    name: Docker Build and Health Check
+    needs: build-and-test
+    uses: ./.github/workflows/docker-build-test.yml
+    with:
+      push: false

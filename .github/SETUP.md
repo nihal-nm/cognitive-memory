@@ -4,19 +4,30 @@ This document describes the CI/CD workflows and required configuration.
 
 ## Workflows
 
+### Reusable Workflow (`.github/workflows/docker-build-test.yml`)
+
+Shared logic called by both CI and CD. Not triggered directly.
+
+- **Inputs**:
+  - `push` (boolean) — whether to push the image to Quay.io after a successful health check
+  - `quay_repo` (string) — Quay.io repository path (default: `rigazilla/cognitive-memory`)
+- **Jobs**:
+  - Build application with Maven
+  - Build Docker image
+  - Test container health check (`/q/health/live`)
+  - Optionally push image to Quay.io
+
 ### CI Workflow (`.github/workflows/ci.yml`)
-- **Trigger**: Push to `main` branch
+- **Trigger**: Push to `main` branch, pull requests targeting `main`
 - **Jobs**:
   - Build application with Maven
   - Run unit tests
+  - Call reusable workflow with `push: false` (build + health check only, no registry push)
 
 ### CD Workflow (`.github/workflows/cd.yml`)
 - **Trigger**: Push to `main` branch
 - **Jobs**:
-  - Build application
-  - Build Docker image
-  - Test container health check
-  - Push image to Quay.io
+  - Call reusable workflow with `push: true` (build + health check + push to Quay.io)
 
 ## Required Configuration
 
