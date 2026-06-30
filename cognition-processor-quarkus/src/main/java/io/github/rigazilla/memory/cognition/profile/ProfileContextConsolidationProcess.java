@@ -5,9 +5,10 @@ import io.github.rigazilla.memory.cognition.process.ManagedProcessInspection;
 import io.github.rigazilla.memory.cognition.process.ManagedProcessState;
 import io.github.rigazilla.memory.cognition.resource.LlmResourceConfiguration;
 import io.github.rigazilla.memory.cognition.resource.ResourceRequirements;
+import io.quarkiverse.langchain4j.RegisterAiService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.config.Config;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
@@ -30,14 +31,8 @@ public class ProfileContextConsolidationProcess implements CognitiveProcess {
     @Inject
     ProfileContextService profileContextService;
 
-    @ConfigProperty(name = "cognition.resources.default.llm.model")
-    String defaultModel;
-
-    @ConfigProperty(name = "cognition.resources.default.llm.base-url")
-    String defaultBaseUrl;
-
-    @ConfigProperty(name = "cognition.resources.default.llm.provider")
-    String defaultProvider;
+    @Inject
+    Config config;
     
     private final AtomicReference<Instant> lastRunTime = new AtomicReference<>();
     private final AtomicReference<String> lastRunStatus = new AtomicReference<>("never_run");
@@ -90,16 +85,15 @@ public class ProfileContextConsolidationProcess implements CognitiveProcess {
         ResourceRequirements requirements = getResourceRequirements();
         if (requirements != null) {
             Map<String, Map<String, String>> resourceTypes = new LinkedHashMap<>();
-            requirements.getAllResources().forEach((name, config) -> {
+            requirements.getAllResources().forEach((name, resourceConfig) -> {
                 Map<String, String> resourceInfo = new LinkedHashMap<>();
-                resourceInfo.put("type", config.getType().name());
+                resourceInfo.put("type", resourceConfig.getType().name());
                 
-                // Add prompt content for LLM resources
-                if (config.getType() == io.github.rigazilla.memory.cognition.resource.ResourceType.LLM) {
-                    // Add model and endpoint information
-                    resourceInfo.put("model", defaultModel);
-                    resourceInfo.put("endpoint", defaultBaseUrl);
-                    resourceInfo.put("provider", defaultProvider);
+                // Add LLM details from the actual AI service annotation
+                if (resourceConfig.getType() == io.github.rigazilla.memory.cognition.resource.ResourceType.LLM) {
+                    if ("consolidator".equals(name)) {
+                        addLlmDetails(resourceInfo, ProfileContextConsolidator.class);
+                    }
                     
                     String promptPath = switch (name) {
                         case "consolidator" -> "prompts/profile-consolidator-system.md";
@@ -134,6 +128,34 @@ public class ProfileContextConsolidationProcess implements CognitiveProcess {
         );
     }
     
+    /**
+     * Populate LLM resource info by reading the modelName from the @RegisterAiService annotation
+     * and resolving the actual provider, model, and endpoint from Quarkus config.
+     */
+    private void addLlmDetails(Map<String, String> resourceInfo, Class<?> aiServiceClass) {
+        RegisterAiService annotation = aiServiceClass.getAnnotation(RegisterAiService.class);
+        if (annotation == null) {
+            return;
+        }
+        String modelName = annotation.modelName();
+        String provider = config.getOptionalValue(
+            "quarkus.langchain4j." + modelName + ".chat-model.provider", String.class).orElse("unknown");
+        resourceInfo.put("provider", provider);
+        resourceInfo.put("modelName", modelName);
+
+        if ("ollama".equals(provider)) {
+            resourceInfo.put("model", config.getOptionalValue(
+                "quarkus.langchain4j.ollama." + modelName + ".chat-model.model-id", String.class).orElse("default"));
+            resourceInfo.put("endpoint", config.getOptionalValue(
+                "quarkus.langchain4j.ollama." + modelName + ".base-url", String.class).orElse("http://localhost:11434"));
+        } else {
+            resourceInfo.put("model", config.getOptionalValue(
+                "quarkus.langchain4j.openai." + modelName + ".chat-model.model-name", String.class).orElse("unknown"));
+            resourceInfo.put("endpoint", config.getOptionalValue(
+                "quarkus.langchain4j.openai." + modelName + ".base-url", String.class).orElse("unknown"));
+        }
+    }
+
     /**
      * Trigger consolidation for a specific user.
      * Called by ProfileContextResource.
