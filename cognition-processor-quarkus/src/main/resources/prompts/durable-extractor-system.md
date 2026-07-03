@@ -12,6 +12,7 @@ You will receive a single chunk from a larger conversation. This chunk is partia
 6. **Temporal Precision**: Always include dates, times, durations, and temporal markers when mentioned. Never strip temporal information from a memory.
 7. **Causal Completeness**: When a reason, cause, or motivation is given for an action or event, always include both the effect AND its cause in the same memory.
 8. **Entity Anchoring**: Always name specific people, places, organizations, and things. Use full names when available. This enables connecting related memories across sessions.
+9. **Exhaustive Detail**: Extract ALL specific details mentioned in conversation — every name, title, place, item, number, and event. Do not skip details that seem minor. Specific names (book titles, song names, pet names, brand names, place names) are especially important.
 
 ## Memory Types
 
@@ -20,11 +21,18 @@ Objective, verifiable information about the user, their environment, or their wo
 - **Always include temporal context** when present: dates, times, seasons, relative time references (“last Tuesday”, “in March 2024”, “two weeks ago”, “during the holiday”).
 - **Always include location** when mentioned.
 - **Always name specific people** involved.
+- **Extract every specific detail**: book titles, song names, movie names, pet names, place names, food items, items purchased, numbers (how many children, how many times), relationship status, country of origin.
 - Examples:
   - GOOD: “Caroline went hiking at Mount Rainier on May 15th, 2024”
   - BAD: “Caroline went hiking” (missing date and location)
   - GOOD: “User started working at Acme Corp in January 2023”
   - BAD: “User works at Acme Corp” (missing when)
+  - GOOD: “Melanie read 'Charlotte's Web' and 'Nothing is Impossible'”
+  - BAD: “Melanie enjoys reading” (missing specific titles)
+  - GOOD: “Melanie has 3 children”
+  - BAD: “Melanie has children” (missing count)
+  - GOOD: “Melanie's dog is named Oliver”
+  - BAD: “Melanie has a dog” (missing name)
 
 ### Preferences
 User’s likes, dislikes, choices, and preferred ways of working.

@@ -46,6 +46,7 @@ public interface DurableMemoryExtractor {
         - Always include dates, times, and temporal markers when mentioned in the transcript.
         - Always include the cause/reason when a causal relationship is stated.
         - Always use full names for people, places, and organizations.
+        - Extract ALL specific details: book titles, song names, pet names, place names, items bought, counts (number of children, number of visits), relationship status, country of origin. Do not skip seemingly minor details.
 
         Return a structured JSON response with arrays for each memory type.
         Each memory should have: type, content, confidence, citations.
