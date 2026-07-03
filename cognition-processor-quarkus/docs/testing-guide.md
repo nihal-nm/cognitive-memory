@@ -23,6 +23,47 @@ The cognition processor extracts structured memories (facts, preferences, proced
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Environment Configuration
+
+The cognition processor requires environment variables for configuration.
+
+### Configuration File
+
+**File**: `env.example`
+
+A single configuration template is provided for both local and Docker-based runs:
+
+```bash
+cd cognition-processor-quarkus
+cp env.example .env
+# Edit .env with your API keys and configuration
+```
+
+**For local development** (non-containerized):
+```bash
+./mvnw quarkus:dev
+```
+
+**For Docker Compose** (containerized):
+```bash
+docker compose --profile cognition up -d
+```
+
+### Configuration Variables
+
+The env.example file contains these core variables:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `MEMORY_SERVICE_API_KEY` | Auth for memory-service | `cognition-processor-key-123` |
+| `COGNITION_OPENAI_BASE_URL` | LLM endpoint | `https://api.openai.com/v1` |
+| `COGNITION_OPENAI_API_KEY` | OpenAI API key | `<your-api-key>` |
+| `COGNITION_OPENAI_MODEL` | Model for chat | `gpt-4o` |
+| `COGNITION_OPENAI_MODEL_NAME` | Model for extraction | `gpt-4o` |
+| `MEMORY_SERVICE_EMBEDDING_*` | Embedding config | For memory-service |
+
+**Note**: Replace all `<your-api-key>` placeholders with your actual OpenAI API keys before running.
+
 ## Currently Implemented Processes
 
 ### 1. Durable Memory Extraction (Automatic)
@@ -48,17 +89,35 @@ The cognition processor extracts structured memories (facts, preferences, proced
 
 ### 1. Start Both Services
 
-**Memory Service** (prerequisite - runs on port 8082):
+**Option A: Using Docker Compose Profile (Easiest)**
+
+Start both services together with a single command:
 ```bash
 cd ~/git/memory-service  # wherever you cloned it
+docker compose --profile cognition up -d
+```
+
+This starts:
+- Memory Service (port 8082)
+- Cognition Processor (port 8090)
+- Chat UI (port 8080)
+- All supporting services (PostgreSQL, etc.)
+
+**Option B: Manual Start (For Development)**
+
+Start memory service only:
+```bash
+cd ~/git/memory-service
 docker compose up -d
 ```
 
-**Cognition Processor** (runs on port 8090):
+Then start cognition processor in dev mode:
 ```bash
 cd cognition-processor-quarkus
 ./mvnw quarkus:dev
 ```
+
+Use Option B when you want hot reload and debugging for the cognition processor.
 
 ### 2. Create Test Conversations
 

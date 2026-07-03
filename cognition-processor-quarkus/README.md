@@ -54,8 +54,8 @@ Default configuration works with local development setup. Key settings in `src/m
 - Models: `memory` model for extraction/verification, `topic-summary` for summaries
 
 Environment variable examples:
-- `.env.example` for local host-based runs
-- `.env.docker.example` for Docker-based dev/test runs
+- `env.example` for local host-based runs
+- `env.example` for both local and Docker-based runs
 
 ## Docker Dev/Test
 
@@ -73,12 +73,12 @@ A JVM-based Docker setup is included for local integration testing.
 
 ### Configure Docker runtime
 ```bash
-cp .env.docker.example .env.docker
+cp env.example .env
 ```
 
 Then edit `.env.docker` as needed:
 - set `OPENAI_API_KEY` if using the default OpenAI-compatible memory model configuration
-- or switch the memory model provider to Ollama using the commented examples in `.env.docker.example`
+- or switch the memory model provider to Ollama by editing `env.example`
 
 ### Start the container
 ```bash
