@@ -29,22 +29,27 @@ public interface DurableMemoryExtractor {
     @SystemMessage(fromResource = "prompts/durable-extractor-system.md")
     @UserMessage("""
         Extract durable memories from the following conversation transcript.
-        
+
         For each memory type, identify:
         1. The memory content (clear, concise statement)
         2. Confidence level (0.0-1.0)
         3. Citations (specific quotes or references from the transcript)
-        
+
         Memory Types:
-        - **Facts**: Objective, verifiable information (e.g., "User works at Acme Corp")
-        - **Preferences**: User likes, dislikes, choices (e.g., "User prefers dark mode")
+        - **Facts**: Objective, verifiable information (e.g., "Caroline went hiking at Mount Rainier on May 15th, 2024")
+        - **Preferences**: User likes, dislikes, and reasons (e.g., "User prefers dark mode because bright screens cause eye strain")
         - **Procedures**: Step-by-step processes (e.g., "User's deployment workflow: 1. Run tests, 2. Build, 3. Deploy")
-        - **Problem Solutions**: Issues and resolutions (e.g., "Fixed timeout by increasing connection pool size")
-        - **Decisions**: Choices and rationale (e.g., "Chose PostgreSQL over MongoDB for ACID guarantees")
-        
+        - **Problem Solutions**: Issues with causes and resolutions (e.g., "Build failed because JAVA_HOME pointed to JDK 11; fixed by updating to JDK 17")
+        - **Decisions**: Choices with rationale and alternatives (e.g., "Chose PostgreSQL over MongoDB because the app requires ACID transactions")
+
+        IMPORTANT:
+        - Always include dates, times, and temporal markers when mentioned in the transcript.
+        - Always include the cause/reason when a causal relationship is stated.
+        - Always use full names for people, places, and organizations.
+
         Return a structured JSON response with arrays for each memory type.
         Each memory should have: type, content, confidence, citations.
-        
+
         Transcript:
         {{evidence}}
         """)

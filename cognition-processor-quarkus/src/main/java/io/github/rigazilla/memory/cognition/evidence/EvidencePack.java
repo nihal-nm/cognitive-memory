@@ -76,7 +76,12 @@ public class EvidencePack {
 
                     // Only include if we got actual text
                     if (!text.isEmpty()) {
-                        sb.append(String.format("[%s] %s\n\n", role, text));
+                        String createdAt = entry.getCreatedAt();
+                        if (createdAt != null && !createdAt.isEmpty()) {
+                            sb.append(String.format("[%s] [%s] %s\n\n", createdAt, role, text));
+                        } else {
+                            sb.append(String.format("[%s] %s\n\n", role, text));
+                        }
                     }
                 }
             }
