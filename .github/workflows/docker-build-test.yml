@@ -81,9 +81,7 @@ jobs:
             -e MEMORY_SERVICE_GRPC_HOST=localhost \
             -e MEMORY_SERVICE_GRPC_PORT=8082 \
             -e MEMORY_SERVICE_API_KEY=test-key-for-health-check \
-            -e DEFAULT_LLM_BASE_URL=http://localhost:11434 \
-            -e OPENAI_API_KEY=dummy-key-for-health-check \
-            -e QUARKUS_LANGCHAIN4J_OLLAMA_BASE_URL=http://localhost:11434 \
+            -e COGNITION_OPENAI_API_KEY=dummy-key-for-health-check \
             -e QUARKUS_LOG_FILE_ENABLE=false \
             "$LOCAL_IMAGE"
 
