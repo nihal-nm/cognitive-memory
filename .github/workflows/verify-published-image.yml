@@ -1,0 +1,90 @@
+name: Verify Published Image
+
+on:
+  workflow_run:
+    workflows: ["CD"]
+    types:
+      - completed
+
+jobs:
+  verify-multiarch-image:
+    name: Verify Published Image (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux/amd64
+          - os: macos-latest
+            platform: linux/arm64
+      fail-fast: false
+
+    steps:
+      - name: Determine image tag
+        id: image-tag
+        run: |
+          # Use the branch name from the workflow run
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          # Use the SHA from the workflow run
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          # Construct the image tag (matches the docker-build-test.yml metadata-action output)
+          TAG="quay.io/rigazilla/cognitive-memory:${BRANCH}-${SHA:0:7}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Testing image: ${TAG}"
+
+      - name: Pull Docker image
+        run: |
+          docker pull --platform ${{ matrix.platform }} ${{ steps.image-tag.outputs.tag }}
+
+      - name: Start container for health check
+        run: |
+          docker run -d --name verify-container \
+            -p 8090:8090 \
+            -e QUARKUS_HTTP_PORT=8090 \
+            -e MEMORY_SERVICE_GRPC_HOST=localhost \
+            -e MEMORY_SERVICE_GRPC_PORT=8082 \
+            -e MEMORY_SERVICE_API_KEY=test-key-for-verification \
+            -e COGNITION_OPENAI_API_KEY=dummy-key-for-verification \
+            -e QUARKUS_LOG_FILE_ENABLE=false \
+            ${{ steps.image-tag.outputs.tag }}
+
+      - name: Wait for container to be ready
+        run: |
+          echo "Waiting for container to start..."
+          sleep 10
+          for i in {1..30}; do
+            if curl -f http://localhost:8090/q/health/live 2>/dev/null; then
+              echo "Container is live on ${{ matrix.platform }}!"
+              exit 0
+            fi
+            echo "Attempt $i: Container not live yet..."
+            sleep 2
+          done
+          echo "Container failed to become live on ${{ matrix.platform }}"
+          docker logs verify-container
+          exit 1
+
+      - name: Run readiness check
+        run: |
+          if curl -f http://localhost:8090/q/health/ready 2>/dev/null; then
+            echo "Container is ready on ${{ matrix.platform }}!"
+          else
+            echo "Container is not ready on ${{ matrix.platform }}"
+            docker logs verify-container
+            exit 1
+          fi
+
+      - name: Stop verification container
+        if: always()
+        run: |
+          if docker ps -a --format '{{.Names}}' | grep -q '^verify-container$'; then
+            docker stop verify-container && docker rm verify-container
+          else
+            echo "Container verify-container does not exist, skipping cleanup"
+          fi
+
+      - name: Report success
+        if: success()
+        run: |
+          echo "✅ Published image verified successfully on ${{ matrix.platform }}"

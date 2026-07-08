@@ -18,16 +18,98 @@ on:
         required: false
 
 jobs:
-  docker-build-and-test:
-    name: Build, Test and Push Docker Image
+  test-architecture:
+    name: Test Docker Image (${{ matrix.platform }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+      fail-fast: false
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build application
+        run: ./mvnw -B clean package -DskipTests
+        working-directory: cognition-processor-quarkus
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build Docker image for ${{ matrix.platform }}
+        id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: ./cognition-processor-quarkus
+          file: ./cognition-processor-quarkus/src/main/docker/Dockerfile.jvm
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: local-test-${{ strategy.job-index }}:latest
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Start container for health check
+        run: |
+          docker run -d --name test-container \
+            -p 8090:8090 \
+            -e QUARKUS_HTTP_PORT=8090 \
+            -e MEMORY_SERVICE_GRPC_HOST=localhost \
+            -e MEMORY_SERVICE_GRPC_PORT=8082 \
+            -e MEMORY_SERVICE_API_KEY=test-key-for-health-check \
+            -e COGNITION_OPENAI_API_KEY=dummy-key-for-health-check \
+            -e QUARKUS_LOG_FILE_ENABLE=false \
+            "local-test-${{ strategy.job-index }}:latest"
+
+      - name: Wait for container to be ready
+        run: |
+          echo "Waiting for container to start..."
+          sleep 15
+          for i in {1..30}; do
+            if curl -f http://localhost:8090/q/health/live 2>/dev/null; then
+              echo "Container is live on ${{ matrix.platform }}!"
+              exit 0
+            fi
+            echo "Attempt $i: Container not live yet..."
+            sleep 2
+          done
+          echo "Container failed to become live on ${{ matrix.platform }}"
+          docker logs test-container
+          exit 1
+
+      - name: Stop test container
+        if: always()
+        run: |
+          if docker ps -a --format '{{.Names}}' | grep -q '^test-container$'; then
+            docker stop test-container && docker rm test-container
+          else
+            echo "Container test-container does not exist, skipping cleanup"
+          fi
+
+  push-multiarch:
+    name: Build and Push Multi-arch Image
+    needs: test-architecture
+    runs-on: ubuntu-latest
+    if: inputs.push
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -41,7 +123,6 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to Quay.io
-        if: inputs.push
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: quay.io
@@ -60,64 +141,14 @@ jobs:
             type=sha,prefix={{branch}}-,enable=${{ github.event_name != 'pull_request' }}
             type=raw,value=cd-latest,enable=${{ github.event_name != 'pull_request' }}
 
-      - name: Build Docker image
+      - name: Push multi-arch Docker image to Quay.io
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: ./cognition-processor-quarkus
           file: ./cognition-processor-quarkus/src/main/docker/Dockerfile.jvm
-          load: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Start container for health check
-        run: |
-          # Use the first tag produced by metadata-action as the local image reference
-          LOCAL_IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          docker run -d --name test-container \
-            -p 8090:8090 \
-            -e QUARKUS_HTTP_PORT=8090 \
-            -e MEMORY_SERVICE_GRPC_HOST=localhost \
-            -e MEMORY_SERVICE_GRPC_PORT=8082 \
-            -e MEMORY_SERVICE_API_KEY=test-key-for-health-check \
-            -e COGNITION_OPENAI_API_KEY=dummy-key-for-health-check \
-            -e QUARKUS_LOG_FILE_ENABLE=false \
-            "$LOCAL_IMAGE"
-
-      - name: Wait for container to be ready
-        run: |
-          echo "Waiting for container to start..."
-          sleep 10
-          for i in {1..30}; do
-            if curl -f http://localhost:8090/q/health/live 2>/dev/null; then
-              echo "Container is live!"
-              exit 0
-            fi
-            echo "Attempt $i: Container not live yet..."
-            sleep 2
-          done
-          echo "Container failed to become live"
-          docker logs test-container
-          exit 1
-
-      - name: Stop test container
-        if: always()
-        run: |
-          if docker ps -a --format '{{.Names}}' | grep -q '^test-container$'; then
-            docker stop test-container && docker rm test-container
-          else
-            echo "Container test-container does not exist, skipping cleanup"
-          fi
-
-      - name: Push Docker image to Quay.io
-        if: inputs.push
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: ./cognition-processor-quarkus
-          file: ./cognition-processor-quarkus/src/main/docker/Dockerfile.jvm
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
+          cache-from: type=gha,scope=linux/amd64
           cache-to: type=gha,mode=max
