@@ -37,6 +37,7 @@ jobs:
   docker-build-and-test:
     name: Docker Build and Health Check
     needs: build-and-test
+    if: github.event_name == 'pull_request'
     uses: ./.github/workflows/docker-build-test.yml
     with:
       push: false
