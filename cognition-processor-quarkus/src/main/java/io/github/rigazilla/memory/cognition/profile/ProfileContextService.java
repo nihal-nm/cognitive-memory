@@ -3,6 +3,7 @@ package io.github.rigazilla.memory.cognition.profile;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
 import io.github.chirino.memory.grpc.v1.MemoryItem;
 import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
@@ -207,15 +208,10 @@ public class ProfileContextService {
             }
             valueBuilder.putFields("sections", Value.newBuilder().setStructValue(sectionsBuilder.build()).build());
             
-            // Write using MemoryWriter's gRPC client
-            io.github.chirino.memory.grpc.v1.PutMemoryRequest request = 
-                io.github.chirino.memory.grpc.v1.PutMemoryRequest.newBuilder()
+            AdminPutMemoryRequest request = AdminPutMemoryRequest.newBuilder()
                     .addAllNamespace(namespace)
                     .setKey(LATEST_KEY)
                     .setValue(valueBuilder.build())
-                    .setActor(RequestActor.newBuilder()
-                        .setOnBehalfOfUserId(userId)
-                        .build())
                     .build();
             
             MemoryWriteResult result = memoriesStub.putMemory(request);

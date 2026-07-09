@@ -113,26 +113,19 @@ public class TranscriptLoader {
             LOG.debugf("  Batch entry count: %d", entryIds.size());
             LOG.debugf("  Previous entry ID: %s", previousEntryId != null ? previousEntryId : "(none - first batch)");
 
-            // Convert conversation ID string to UUID bytes
-            ByteString conversationIdBytes = uuidToBytes(conversationId);
-
-            // Build admin request for history channel entries with range filter
             AdminListEntriesRequest.Builder requestBuilder = AdminListEntriesRequest.newBuilder()
-                .setConversationId(conversationIdBytes)
+                .setConversationId(conversationId)
                 .setChannel(Channel.HISTORY);
 
-            // Set page_token to previous entry ID (empty string if null = start from beginning)
             String pageToken = previousEntryId != null ? previousEntryId : "";
             requestBuilder.setPage(io.github.chirino.memory.grpc.v1.PageRequest.newBuilder()
                 .setPageToken(pageToken)
-                .setPageSize(1000)  // Large enough for typical batch
+                .setPageSize(1000)
             );
 
-            // Set up_to_entry_id to last entry in batch (inclusive)
             if (!entryIds.isEmpty()) {
                 String lastEntryId = entryIds.get(entryIds.size() - 1);
-                ByteString lastEntryIdBytes = uuidToBytes(lastEntryId);
-                requestBuilder.setUpToEntryId(lastEntryIdBytes);
+                requestBuilder.setUpToEntryId(uuidToBytes(lastEntryId));
             }
 
             // Call admin gRPC service (admin has full access, no on-behalf-of needed)

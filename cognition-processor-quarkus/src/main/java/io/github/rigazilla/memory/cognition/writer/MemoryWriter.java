@@ -5,7 +5,7 @@ import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
 import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
-import io.github.chirino.memory.grpc.v1.PutMemoryRequest;
+import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
 import io.github.chirino.memory.grpc.v1.RequestActor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
 import io.github.rigazilla.memory.cognition.model.Provenance;
@@ -104,16 +104,12 @@ public class MemoryWriter {
                 .putFields("provenance", buildProvenanceValue(provenance))
                 .build();
 
-            // Build request with RequestActor for on-behalf-of authorization
-            PutMemoryRequest request = PutMemoryRequest.newBuilder()
+            AdminPutMemoryRequest request = AdminPutMemoryRequest.newBuilder()
                 .addAllNamespace(namespace)
                 .setKey(key)
                 .setValue(value)
                 .putIndex("content", candidate.content())
                 .putIndex("type", candidate.type())
-                .setActor(RequestActor.newBuilder()
-                    .setOnBehalfOfUserId(userId)
-                    .build())
                 .build();
 
             // Call gRPC service

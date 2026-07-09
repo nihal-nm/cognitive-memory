@@ -367,10 +367,8 @@ public class JobProcessor {
      */
     private String getConversationOwner(String conversationId) {
         try {
-            ByteString conversationIdBytes = uuidToBytes(conversationId);
-
             AdminGetConversationRequest request = AdminGetConversationRequest.newBuilder()
-                .setConversationId(conversationIdBytes)
+                .setConversationId(conversationId)
                 .build();
 
             AdminConversation conversation = conversationsStub.getConversation(request);
