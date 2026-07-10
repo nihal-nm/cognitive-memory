@@ -28,28 +28,17 @@ public interface DurableMemoryExtractor {
      */
     @SystemMessage(fromResource = "prompts/durable-extractor-system.md")
     @UserMessage("""
-        Extract durable memories from the following conversation transcript.
+        Extract ALL information from the following conversation transcript. Do not skip anything — every event, detail, feeling, plan, item, name, date, and fact matters.
 
-        For each memory type, identify:
-        1. The memory content (clear, concise statement)
+        For each piece of information, create a separate memory with:
+        1. The memory content (clear, concise, standalone statement with all specific details preserved)
         2. Confidence level (0.0-1.0)
-        3. Citations (specific quotes or references from the transcript)
+        3. Citations (quotes from the transcript)
 
-        Memory Types:
-        - **Facts**: Objective, verifiable information (e.g., "Caroline went hiking at Mount Rainier on May 15th, 2024")
-        - **Preferences**: User likes, dislikes, and reasons (e.g., "User prefers dark mode because bright screens cause eye strain")
-        - **Procedures**: Step-by-step processes (e.g., "User's deployment workflow: 1. Run tests, 2. Build, 3. Deploy")
-        - **Problem Solutions**: Issues with causes and resolutions (e.g., "Build failed because JAVA_HOME pointed to JDK 11; fixed by updating to JDK 17")
-        - **Decisions**: Choices with rationale and alternatives (e.g., "Chose PostgreSQL over MongoDB because the app requires ACID transactions")
+        Resolve relative dates using the entry timestamps: "last week" in a [2023-07-06] entry → "around late June 2023".
 
-        IMPORTANT:
-        - Always include dates, times, and temporal markers when mentioned in the transcript.
-        - Always include the cause/reason when a causal relationship is stated.
-        - Always use full names for people, places, and organizations.
-        - Extract ALL specific details: book titles, song names, pet names, place names, items bought, counts (number of children, number of visits), relationship status, country of origin. Do not skip seemingly minor details.
-
-        Return a structured JSON response with arrays for each memory type.
-        Each memory should have: type, content, confidence, citations.
+        Return a structured JSON with arrays: facts, preferences, procedures, problemSolutions, decisions.
+        Most extractions should be facts. Each memory needs: type, content, confidence, citations.
 
         Transcript:
         {{evidence}}

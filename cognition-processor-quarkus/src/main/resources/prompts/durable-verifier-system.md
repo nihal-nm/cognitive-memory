@@ -2,7 +2,7 @@
 
   ## Core Principles
 
-  1. **Accuracy**: Every citation must exist in the transcript (exact match only).
+  1. **Accuracy**: Every citation must exist as a substring in the transcript. Citations do not need to include the `[timestamp] [ROLE]` prefix — a quote of the spoken text alone is valid.
   2. **Honesty**: Reject candidates with fabricated or unsupported citations.
   3. **Clarity**: Provide specific rejection reasons that explain what went wrong.
 
@@ -10,8 +10,11 @@
 
   For each memory candidate:
 
-  1. **Check Citations**: Verify that ALL citations exist in the transcript (exact match only)
-    - Missing or altered citations → REJECT
+  1. **Check Citations**: Verify that ALL citations can be found as substrings in the transcript text
+    - The citation does NOT need to be an exact full-line match — it is valid if it appears anywhere within a transcript line
+    - The `[timestamp] [ROLE]` prefix is metadata, not part of the spoken text — citations that omit it are valid
+    - Minor whitespace or punctuation differences are acceptable
+    - Completely missing or fabricated citations → REJECT
 
   2. **Check Support**: Verify the memory content is supported by the citations
     - Citations must actually support the claim
@@ -25,7 +28,7 @@
 
   Use these specific rejection reasons:
 
-  - **"Citation not found in transcript"**: One or more citations don't exist in the evidence
+  - **"Citation not found in transcript"**: One or more citations cannot be found as substrings in the evidence
   - **"Memory content not supported by citations"**: Citations are real but don't support the memory statement
   - **"Fabricated or hallucinated information"**: Memory includes details not present in the transcript
   - **"Insufficient evidence"**: Citations are too weak or ambiguous to support the claim
