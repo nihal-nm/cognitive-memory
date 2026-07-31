@@ -59,6 +59,15 @@ When adding a new managed cognitive process:
 
 Do not require runtime `details` for every process. If a process has no meaningful live operational data yet, it can expose empty or minimal inspection details.
 
+## Code Style
+
+Java code must pass **Checkstyle** and **SpotBugs** checks configured in the project root:
+
+- **`checkstyle.xml`** — enforces: max line length 120 chars, no unused imports, no star imports, braces on all control structures, consistent `}` placement, trailing newline
+- **`spotbugs-exclude.xml`** — excludes CDI/Quarkus false positives (EI_EXPOSE_REP, serialization noise, broad catch patterns); all other SpotBugs findings must be resolved
+
+Run `./mvnw -B checkstyle:check spotbugs:check` before submitting changes. Both checks run automatically in CI on pull requests.
+
 ## Documentation
 
 - **Core concepts**: https://chirino.github.io/memory-service/docs/concepts/ - Essential memory-service concepts (conversations, entries, memories, access control) that the cognition layer builds upon

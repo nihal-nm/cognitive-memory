@@ -30,3 +30,30 @@ jobs:
       - name: Run tests
         run: ./mvnw -B test
         working-directory: cognition-processor-quarkus
+
+      - name: Run Checkstyle
+        if: runner.os == 'Linux'
+        run: ./mvnw -B checkstyle:checkstyle
+        working-directory: cognition-processor-quarkus
+
+      - name: Run SpotBugs
+        if: runner.os == 'Linux'
+        run: ./mvnw -B spotbugs:spotbugs
+        working-directory: cognition-processor-quarkus
+
+      - name: Annotate Checkstyle findings
+        if: runner.os == 'Linux' && always()
+        uses: motlin/checkstyle-results@v1
+        with:
+          checkstyle_files: cognition-processor-quarkus/target/checkstyle-result.xml
+
+      - name: Annotate SpotBugs findings
+        if: runner.os == 'Linux' && always()
+        uses: ./.github/actions/spotbugs-reporter
+        with:
+          spotbugs_files: cognition-processor-quarkus/target/spotbugsXml.xml
+
+      - name: Fail on quality issues
+        if: runner.os == 'Linux'
+        run: ./mvnw -B checkstyle:check spotbugs:check
+        working-directory: cognition-processor-quarkus

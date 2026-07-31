@@ -1,0 +1,19 @@
+name: "SpotBugs Reporter"
+description: "Reads SpotBugs XML and emits GitHub error/warning annotations"
+author: "rigazilla"
+
+branding:
+  icon: "alert-triangle"
+  color: "orange"
+
+inputs:
+  spotbugs_files:
+    description: "Glob to locate SpotBugs XML reports"
+    required: false
+    default: "**/spotbugsXml.xml"
+
+runs:
+  using: composite
+  steps:
+    - run: python3 "${{ github.action_path }}/spotbugs_reporter.py" "${{ inputs.spotbugs_files }}"
+      shell: bash
