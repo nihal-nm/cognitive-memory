@@ -118,7 +118,8 @@ public class MemoryJustifyService {
             if (fields.containsKey("provenance")) {
                 Struct provenanceStruct = fields.get("provenance").getStructValue();
                 Map<String, Value> provFields = provenanceStruct.getFieldsMap();
-                conversationId = provFields.getOrDefault("conversation_id", Value.getDefaultInstance()).getStringValue();
+                conversationId = provFields.getOrDefault("conversation_id",
+                        Value.getDefaultInstance()).getStringValue();
 
                 if (provFields.containsKey("entry_ids")) {
                     List<String> ids = new ArrayList<>();
@@ -230,9 +231,7 @@ public class MemoryJustifyService {
                 // USER entries: text is directly in "text" field
                 if (contentFields.containsKey("text")) {
                     text = contentFields.get("text").getStringValue();
-                }
-                // AI entries (history/lc4j): text is in events array -> Completed event -> aiMessage.text
-                else if (contentFields.containsKey("events")) {
+                } else if (contentFields.containsKey("events")) {
                     text = extractAiMessageText(contentFields.get("events"));
                 }
             }

@@ -6,7 +6,6 @@ import com.google.protobuf.Value;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
 import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
-import io.github.chirino.memory.grpc.v1.RequestActor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
 import io.github.rigazilla.memory.cognition.model.Provenance;
 import io.grpc.ClientCall;
@@ -134,7 +133,8 @@ public class MemoryWriter {
      * @param provenance Provenance information shared by all memories in this batch
      * @return List of write results
      */
-    public List<MemoryWriteResult> writeMemories(String userId, List<MemoryCandidate> candidates, Provenance provenance) {
+    public List<MemoryWriteResult> writeMemories(String userId,
+            List<MemoryCandidate> candidates, Provenance provenance) {
         LOG.infof("Writing %d memories for user %s", candidates.size(), userId);
 
         return candidates.stream()

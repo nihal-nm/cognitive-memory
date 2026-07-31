@@ -21,7 +21,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -107,7 +106,9 @@ public class TranscriptLoader {
      * @param actorUserId User ID to act on behalf of (conversation owner)
      * @return EvidencePack containing transcript entries
      */
-    public EvidencePack loadTranscript(String conversationId, List<String> entryIds, String previousEntryId, String actorUserId) {
+    public EvidencePack loadTranscript(String conversationId,
+            List<String> entryIds, String previousEntryId,
+            String actorUserId) {
         try {
             LOG.debugf("Loading transcript for conversation: %s", conversationId);
             LOG.debugf("  Batch entry count: %d", entryIds.size());

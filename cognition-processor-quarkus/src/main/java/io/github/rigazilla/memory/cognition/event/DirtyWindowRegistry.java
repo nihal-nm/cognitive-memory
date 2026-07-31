@@ -82,14 +82,17 @@ public class DirtyWindowRegistry {
                 String previousEntryId = lastPromotedEntryId.get(conversationId);
 
                 // Create new window
-                DirtyWindow newWindow = new DirtyWindow(conversationId, eventCursor, entryId, observedAt, debounceDelay, previousEntryId);
+                DirtyWindow newWindow = new DirtyWindow(
+                        conversationId, eventCursor, entryId,
+                        observedAt, debounceDelay, previousEntryId);
 
                 LOG.debugf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                 LOG.debugf("Window Created");
                 LOG.debugf("  Conversation ID:    %s", conversationId);
                 LOG.debugf("  First Cursor:       %s", eventCursor);
                 LOG.debugf("  Entry ID:           %s", entryId != null ? entryId : "(none)");
-                LOG.debugf("  Previous Entry ID:  %s", previousEntryId != null ? previousEntryId : "(none - first window)");
+                LOG.debugf("  Previous Entry ID:  %s",
+                        previousEntryId != null ? previousEntryId : "(none - first window)");
                 LOG.debugf("  Observed At:        %s", observedAt);
                 LOG.debugf("  Due At:             %s", newWindow.getDueAt());
                 LOG.debugf("  Debounce Delay:     %s", debounceDelay);
@@ -228,7 +231,8 @@ public class DirtyWindowRegistry {
                     LOG.debugf("Window Promoted");
                     LOG.debugf("  Conversation ID:    %s", removed.getConversationId());
                     LOG.debugf("  Trigger:            %s", trigger);
-                    LOG.debugf("  Event Cursors:      %s → %s", removed.getFirstEventCursor(), removed.getLatestEventCursor());
+                    LOG.debugf("  Event Cursors:      %s → %s",
+                            removed.getFirstEventCursor(), removed.getLatestEventCursor());
                     LOG.debugf("  Event Count:        %d", removed.getEventCount());
                     LOG.debugf("  Entry Count:        %d", removed.getEntryCount());
                     LOG.debugf("  Entry IDs:          %s", removed.getEntryIds());
@@ -314,11 +318,14 @@ public class DirtyWindowRegistry {
                 LOG.debugf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                 LOG.debugf("Window Restored");
                 LOG.debugf("  Conversation ID:    %s", window.getConversationId());
-                LOG.debugf("  Event Cursors:      %s → %s", window.getFirstEventCursor(), window.getLatestEventCursor());
+                LOG.debugf("  Event Cursors:      %s → %s",
+                        window.getFirstEventCursor(), window.getLatestEventCursor());
                 LOG.debugf("  Event Count:        %d", window.getEventCount());
                 LOG.debugf("  Entry Count:        %d", window.getEntryCount());
                 LOG.debugf("  Entry IDs:          %s", window.getEntryIds());
-                LOG.debugf("  Previous Entry ID:  %s", window.getPreviousEntryId() != null ? window.getPreviousEntryId() : "(none - first window)");
+                LOG.debugf("  Previous Entry ID:  %s",
+                        window.getPreviousEntryId() != null
+                                ? window.getPreviousEntryId() : "(none - first window)");
                 LOG.debugf("  First Observed:     %s", window.getFirstObservedAt());
                 LOG.debugf("  Latest Observed:    %s", window.getLatestObservedAt());
                 LOG.debugf("  Due At:             %s", window.getDueAt());

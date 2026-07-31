@@ -244,8 +244,9 @@ public class CheckpointService {
                     // NOT_FOUND might occur on first save - retry once
                     if (attempt < maxAttempts) {
                         if (!hasSuccessfullySaved) {
-                            LOG.infof("Checkpoint not found for worker %s on first save attempt, retrying... (attempt %d/%d)",
-                                     workerId, attempt, maxAttempts);
+                            LOG.infof("Checkpoint not found for worker %s on first save attempt,"
+                                    + " retrying... (attempt %d/%d)",
+                                    workerId, attempt, maxAttempts);
                         } else {
                             LOG.warnf("Checkpoint not found for worker %s, retrying... (attempt %d/%d)",
                                      workerId, attempt, maxAttempts);

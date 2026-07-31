@@ -32,9 +32,9 @@ public record MemoryCandidate(
         @JsonProperty("citations") List<String> citations
     ) {
         // Normalize nulls to empty values for lenient parsing
-        if (type == null) type = "";
-        if (content == null) content = "";
-        if (citations == null) citations = List.of();
+        if (type == null) { type = ""; }
+        if (content == null) { content = ""; }
+        if (citations == null) { citations = List.of(); }
         
         // Allow construction even if invalid - will be filtered in getAllCandidates()
         return new MemoryCandidate(type, content, confidence, citations);

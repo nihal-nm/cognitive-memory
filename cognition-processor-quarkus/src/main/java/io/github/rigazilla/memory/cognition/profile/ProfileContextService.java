@@ -5,9 +5,6 @@ import com.google.protobuf.Value;
 import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
 import io.github.chirino.memory.grpc.v1.MemoryItem;
-import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
-import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
-import io.github.chirino.memory.grpc.v1.RequestActor;
 import io.github.chirino.memory.grpc.v1.AdminSearchMemoriesRequest;
 import io.github.chirino.memory.grpc.v1.AdminSearchMemoriesResponse;
 import java.util.stream.Collectors;
@@ -22,7 +19,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -187,7 +183,8 @@ public class ProfileContextService {
             valueBuilder.putFields("kind", Value.newBuilder().setStringValue("profile_context_snapshot").build());
             valueBuilder.putFields("version", Value.newBuilder().setStringValue("profile_context.v1").build());
             valueBuilder.putFields("user_id", Value.newBuilder().setStringValue(userId).build());
-            valueBuilder.putFields("generated_at", Value.newBuilder().setStringValue(snapshot.generatedAt().toString()).build());
+            valueBuilder.putFields("generated_at",
+                    Value.newBuilder().setStringValue(snapshot.generatedAt().toString()).build());
             valueBuilder.putFields("content", Value.newBuilder().setStringValue(snapshot.content()).build());
             
             // Build sections metadata
@@ -202,9 +199,11 @@ public class ProfileContextService {
                 for (String key : section.sourceMemoryKeys()) {
                     keysBuilder.addValues(Value.newBuilder().setStringValue(key).build());
                 }
-                sectionBuilder.putFields("source_memory_keys", Value.newBuilder().setListValue(keysBuilder.build()).build());
+                sectionBuilder.putFields("source_memory_keys",
+                        Value.newBuilder().setListValue(keysBuilder.build()).build());
                 
-                sectionsBuilder.putFields(entry.getKey(), Value.newBuilder().setStructValue(sectionBuilder.build()).build());
+                sectionsBuilder.putFields(entry.getKey(),
+                        Value.newBuilder().setStructValue(sectionBuilder.build()).build());
             }
             valueBuilder.putFields("sections", Value.newBuilder().setStructValue(sectionsBuilder.build()).build());
             
@@ -214,7 +213,7 @@ public class ProfileContextService {
                     .setValue(valueBuilder.build())
                     .build();
             
-            MemoryWriteResult result = memoriesStub.putMemory(request);
+            memoriesStub.putMemory(request);
             LOG.infof("Profile snapshot written: namespace=%s, key=%s", namespace, LATEST_KEY);
             
         } catch (Exception e) {

@@ -71,7 +71,8 @@ public class DefaultLlmResourceConfiguration implements LlmResourceConfiguration
     
     @Override
     public String toString() {
-        return String.format("LlmResourceConfiguration{provider='%s', model='%s', temperature=%.2f, maxTokens=%d, timeout=%s}",
-            provider, model, temperature, maxTokens, timeout);
+        return String.format("LlmResourceConfiguration{provider='%s', model='%s', "
+                + "temperature=%.2f, maxTokens=%d, timeout=%s}",
+                provider, model, temperature, maxTokens, timeout);
     }
 }

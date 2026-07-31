@@ -6,8 +6,6 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
-import java.time.Duration;
-
 /**
  * REST endpoint for checking event client status.
  * Phase 2: Enhanced with dirty window metrics.

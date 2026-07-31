@@ -96,7 +96,8 @@ public record DurableExtractionResponse(
     @Override
     public String toString() {
         return String.format(
-            "DurableExtractionResponse{facts=%d, preferences=%d, procedures=%d, problemSolutions=%d, decisions=%d, total=%d}",
+            "DurableExtractionResponse{facts=%d, preferences=%d, procedures=%d,"
+                    + " problemSolutions=%d, decisions=%d, total=%d}",
             facts.size(), preferences.size(), procedures.size(), 
             problemSolutions.size(), decisions.size(), getTotalCount()
         );

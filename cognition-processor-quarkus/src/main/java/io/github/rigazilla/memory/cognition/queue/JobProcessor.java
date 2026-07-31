@@ -1,7 +1,6 @@
 package io.github.rigazilla.memory.cognition.queue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.protobuf.ByteString;
 import io.github.chirino.memory.grpc.v1.AdminConversation;
 import io.github.chirino.memory.grpc.v1.AdminConversationsServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminGetConversationRequest;
@@ -35,9 +34,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
-import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 
@@ -299,7 +296,9 @@ public class JobProcessor {
                 }
             }
 
-            LOG.infof("  ✓ Extracted %d valid memory candidates (raw=%d, filtered=%d): facts=%d, preferences=%d, procedures=%d, problemSolutions=%d, decisions=%d",
+            LOG.infof("  ✓ Extracted %d valid memory candidates "
+                    + "(raw=%d, filtered=%d): facts=%d, preferences=%d, "
+                    + "procedures=%d, problemSolutions=%d, decisions=%d",
                 validCandidates.size(),
                 rawTotal,
                 filteredCount,
@@ -385,21 +384,6 @@ public class JobProcessor {
         } catch (Exception e) {
             LOG.errorf(e, "Unexpected error loading conversation metadata for %s", conversationId);
             throw new JobProcessingException("Failed to load conversation metadata for " + conversationId, e);
-        }
-    }
-
-    /**
-     * Convert UUID string to protobuf ByteString (16-byte big-endian).
-     */
-    private ByteString uuidToBytes(String uuidString) {
-        try {
-            UUID uuid = UUID.fromString(uuidString);
-            ByteBuffer buffer = ByteBuffer.allocate(16);
-            buffer.putLong(uuid.getMostSignificantBits());
-            buffer.putLong(uuid.getLeastSignificantBits());
-            return ByteString.copyFrom(buffer.array());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid UUID format: " + uuidString, e);
         }
     }
 

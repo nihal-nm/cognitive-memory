@@ -147,7 +147,8 @@ public class ProfileContextConsolidationProcess implements CognitiveProcess {
             resourceInfo.put("model", config.getOptionalValue(
                 "quarkus.langchain4j.ollama." + modelName + ".chat-model.model-id", String.class).orElse("default"));
             resourceInfo.put("endpoint", config.getOptionalValue(
-                "quarkus.langchain4j.ollama." + modelName + ".base-url", String.class).orElse("http://localhost:11434"));
+                "quarkus.langchain4j.ollama." + modelName + ".base-url",
+                String.class).orElse("http://localhost:11434"));
         } else {
             resourceInfo.put("model", config.getOptionalValue(
                 "quarkus.langchain4j.openai." + modelName + ".chat-model.model-name", String.class).orElse("unknown"));

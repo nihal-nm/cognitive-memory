@@ -10,7 +10,9 @@ import io.quarkiverse.langchain4j.RegisterAiService;
  * Uses the "memory" named model configured in application.properties.
  * Returns structured output via ProfileConsolidationResponse record.
  */
-@RegisterAiService(chatMemoryProviderSupplier = RegisterAiService.NoChatMemoryProviderSupplier.class, modelName = "memory")
+@RegisterAiService(
+        chatMemoryProviderSupplier = RegisterAiService.NoChatMemoryProviderSupplier.class,
+        modelName = "memory")
 public interface ProfileContextConsolidator {
     
     /**
