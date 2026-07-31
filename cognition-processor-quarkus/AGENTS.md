@@ -68,6 +68,8 @@ Java code must pass **Checkstyle** and **SpotBugs** checks configured in the pro
 
 Run `./mvnw -B checkstyle:check spotbugs:check` before submitting changes. Both checks run automatically in CI on pull requests.
 
+**Code Coverage** is collected via **JaCoCo**. Target thresholds (not yet enforced): 80% line coverage, 70% branch coverage. Run `./mvnw -B test jacoco:report` to generate a coverage report, then open `target/site/jacoco/index.html` to view it.
+
 ## Documentation
 
 - **Core concepts**: https://chirino.github.io/memory-service/docs/concepts/ - Essential memory-service concepts (conversations, entries, memories, access control) that the cognition layer builds upon

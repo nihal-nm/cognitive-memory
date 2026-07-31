@@ -31,6 +31,35 @@ jobs:
         run: ./mvnw -B test
         working-directory: cognition-processor-quarkus
 
+      - name: Generate coverage report
+        if: runner.os == 'Linux'
+        run: ./mvnw -B jacoco:report
+        working-directory: cognition-processor-quarkus
+
+      - name: Coverage summary
+        if: runner.os == 'Linux' && always()
+        run: |
+          REPORT="cognition-processor-quarkus/target/site/jacoco/jacoco.xml"
+          if [ ! -f "$REPORT" ]; then
+            echo "::warning::No JaCoCo coverage data — no tests were executed"
+            echo "## Code Coverage" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "> **No coverage data available.** JaCoCo found no test execution data." >> "$GITHUB_STEP_SUMMARY"
+            echo "> Add tests under \`src/test/java\` to enable coverage reporting." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Coverage report
+        if: runner.os == 'Linux' && always() && hashFiles('cognition-processor-quarkus/target/site/jacoco/jacoco.xml') != ''
+        uses: Madrapps/jacoco-report@v1.7.2
+        with:
+          paths: cognition-processor-quarkus/target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          comment-type: summary
+          min-coverage-overall: 80
+          min-coverage-changed-files: 80
+          title: Code Coverage
+          continue-on-error: true
+
       - name: Run Checkstyle
         if: runner.os == 'Linux'
         run: ./mvnw -B checkstyle:checkstyle
