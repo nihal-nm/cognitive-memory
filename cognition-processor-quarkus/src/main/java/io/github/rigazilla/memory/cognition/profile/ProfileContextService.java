@@ -50,8 +50,8 @@ public class ProfileContextService {
     @Inject
     MemoryWriter memoryWriter;
     
-    private ManagedChannel channel;
-    private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
+    ManagedChannel channel;
+    AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
     
     @PostConstruct
     void init() {

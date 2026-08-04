@@ -55,10 +55,9 @@ jobs:
           paths: cognition-processor-quarkus/target/site/jacoco/jacoco.xml
           token: ${{ secrets.GITHUB_TOKEN }}
           comment-type: summary
-          min-coverage-overall: 80
-          min-coverage-changed-files: 80
+          min-coverage-overall: 35
+          min-coverage-changed-files: 35
           title: Code Coverage
-          continue-on-error: true
 
       - name: Run Checkstyle
         if: runner.os == 'Linux'

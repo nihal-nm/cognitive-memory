@@ -1,0 +1,308 @@
+package io.github.rigazilla.memory.cognition.writer;
+
+import com.google.protobuf.ByteString;
+import com.google.protobuf.Struct;
+import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
+import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
+import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
+import io.github.rigazilla.memory.cognition.model.Provenance;
+import io.grpc.ManagedChannel;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests for MemoryWriter.
+ * 
+ * Tests cover:
+ * - Single and batch memory writing
+ * - Namespace construction
+ * - Provenance and citations value building
+ * - Error handling
+ * - UUID conversion
+ */
+class MemoryWriterTest {
+
+    private MemoryWriter writer;
+    private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub mockMemoriesStub;
+    private ManagedChannel mockChannel;
+
+    @BeforeEach
+    void setUp() {
+        writer = new MemoryWriter();
+        mockMemoriesStub = mock(AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub.class);
+        mockChannel = mock(ManagedChannel.class);
+
+        // Inject mocks
+        writer.memoriesStub = mockMemoriesStub;
+        writer.channel = mockChannel;
+        writer.grpcHost = "localhost";
+        writer.grpcPort = 8082;
+        writer.apiKey = "test-key";
+    }
+
+    @Test
+    void testWriteMemory_Success_ReturnsResult() {
+        // Given: Memory candidate and provenance
+        String userId = "user-123";
+        MemoryCandidate candidate = new MemoryCandidate(
+            "fact",
+            "User prefers dark mode",
+            0.95,
+            List.of("entry-1", "entry-2")
+        );
+        Provenance provenance = createProvenance("conv-123", List.of("entry-1", "entry-2"));
+
+        UUID memoryId = UUID.randomUUID();
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(memoryId.toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write memory
+        MemoryWriteResult writeResult = writer.writeMemory(userId, candidate, provenance);
+
+        // Then: Should return result
+        assertNotNull(writeResult);
+        assertEquals(memoryId.toString(), bytesToUuid(writeResult.getId()));
+    }
+
+    @Test
+    void testWriteMemory_BuildsCorrectNamespace() {
+        // Given: Memory candidate
+        String userId = "user-456";
+        MemoryCandidate candidate = new MemoryCandidate("preference", "Content", 0.9, List.of());
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write memory
+        writer.writeMemory(userId, candidate, provenance);
+
+        // Then: Should use correct namespace
+        ArgumentCaptor<AdminPutMemoryRequest> captor = 
+            ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+
+        AdminPutMemoryRequest request = captor.getValue();
+        assertEquals(List.of("user", userId, "cognition.v1", "preference"), 
+                    request.getNamespaceList());
+    }
+
+    @Test
+    void testWriteMemory_IncludesContentAndConfidence() {
+        // Given: Memory candidate with content and confidence
+        String userId = "user-789";
+        MemoryCandidate candidate = new MemoryCandidate(
+            "fact",
+            "Important fact content",
+            0.88,
+            List.of("citation-1")
+        );
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write memory
+        writer.writeMemory(userId, candidate, provenance);
+
+        // Then: Should include content and confidence in value
+        ArgumentCaptor<AdminPutMemoryRequest> captor = 
+            ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+
+        Struct value = captor.getValue().getValue();
+        assertEquals("Important fact content", 
+                    value.getFieldsMap().get("content").getStringValue());
+        assertEquals(0.88, value.getFieldsMap().get("confidence").getNumberValue());
+    }
+
+    @Test
+    void testWriteMemory_IncludesProvenance() {
+        // Given: Memory with provenance
+        String userId = "user-prov";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "Content", 0.9, List.of());
+        Provenance provenance = new Provenance(
+            "conv-123",
+            List.of("entry-1", "entry-2"),
+            "cursor-first",
+            "cursor-latest",
+            "debounce-timeout",
+            "hash-123",
+            "evidence-base-id",
+            "evidence-hash",
+            "runtime-1",
+            "1.0",
+            Instant.parse("2026-08-04T10:00:00Z")
+        );
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write memory
+        writer.writeMemory(userId, candidate, provenance);
+
+        // Then: Should include provenance in value
+        ArgumentCaptor<AdminPutMemoryRequest> captor = 
+            ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+
+        Struct value = captor.getValue().getValue();
+        Struct provenanceStruct = value.getFieldsMap().get("provenance").getStructValue();
+        
+        assertEquals("conv-123", 
+                    provenanceStruct.getFieldsMap().get("conversation_id").getStringValue());
+        assertEquals("runtime-1", 
+                    provenanceStruct.getFieldsMap().get("runtime_id").getStringValue());
+        assertEquals("hash-123", 
+                    provenanceStruct.getFieldsMap().get("source_hash").getStringValue());
+    }
+
+    @Test
+    void testWriteMemory_GrpcError_ThrowsException() {
+        // Given: gRPC error occurs
+        String userId = "user-error";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "Content", 0.9, List.of());
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class)))
+            .thenThrow(new StatusRuntimeException(Status.INTERNAL));
+
+        // When/Then: Should throw MemoryWriteException
+        assertThrows(MemoryWriter.MemoryWriteException.class,
+                    () -> writer.writeMemory(userId, candidate, provenance));
+    }
+
+    @Test
+    void testWriteMemories_Batch_WritesAll() {
+        // Given: Multiple memory candidates
+        String userId = "user-batch";
+        List<MemoryCandidate> candidates = List.of(
+            new MemoryCandidate("fact", "Fact 1", 0.9, List.of()),
+            new MemoryCandidate("preference", "Pref 1", 0.85, List.of()),
+            new MemoryCandidate("fact", "Fact 2", 0.92, List.of())
+        );
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write batch
+        List<MemoryWriteResult> results = writer.writeMemories(userId, candidates, provenance);
+
+        // Then: Should write all memories
+        assertEquals(3, results.size());
+        verify(mockMemoriesStub, times(3)).putMemory(any(AdminPutMemoryRequest.class));
+    }
+
+    @Test
+    void testWriteMemory_IncludesCitations() {
+        // Given: Memory with citations
+        String userId = "user-citations";
+        MemoryCandidate candidate = new MemoryCandidate(
+            "fact",
+            "Content",
+            0.9,
+            List.of("citation-1", "citation-2", "citation-3")
+        );
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write memory
+        writer.writeMemory(userId, candidate, provenance);
+
+        // Then: Should include citations array
+        ArgumentCaptor<AdminPutMemoryRequest> captor = 
+            ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+
+        Struct value = captor.getValue().getValue();
+        int citationCount = value.getFieldsMap().get("citations")
+            .getListValue().getValuesCount();
+        assertEquals(3, citationCount);
+    }
+
+    @Test
+    void testWriteMemory_GeneratesUniqueKeys() {
+        // Given: Two identical candidates
+        String userId = "user-keys";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "Same content", 0.9, List.of());
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write same candidate twice
+        writer.writeMemory(userId, candidate, provenance);
+        writer.writeMemory(userId, candidate, provenance);
+
+        // Then: Should generate different keys
+        ArgumentCaptor<AdminPutMemoryRequest> captor = 
+            ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub, times(2)).putMemory(captor.capture());
+
+        List<AdminPutMemoryRequest> requests = captor.getAllValues();
+        assertNotEquals(requests.get(0).getKey(), requests.get(1).getKey());
+    }
+
+    // Helper methods
+
+    private Provenance createProvenance(String conversationId, List<String> entryIds) {
+        return new Provenance(
+            conversationId,
+            entryIds,
+            "cursor-first",
+            "cursor-latest",
+            "test-trigger",
+            null,
+            null,
+            null,
+            "runtime-test",
+            "1.0",
+            Instant.now()
+        );
+    }
+
+    private ByteString uuidToBytes(String uuidString) {
+        UUID uuid = UUID.fromString(uuidString);
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        return ByteString.copyFrom(buffer.array());
+    }
+
+    private String bytesToUuid(ByteString bytes) {
+        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
+        long mostSigBits = buffer.getLong();
+        long leastSigBits = buffer.getLong();
+        return new UUID(mostSigBits, leastSigBits).toString();
+    }
+}

@@ -42,8 +42,8 @@ public class TranscriptLoader {
     @ConfigProperty(name = "memory-service.api-key")
     String apiKey;
 
-    private ManagedChannel channel;
-    private AdminEntriesServiceGrpc.AdminEntriesServiceBlockingStub entriesStub;
+    ManagedChannel channel;
+    AdminEntriesServiceGrpc.AdminEntriesServiceBlockingStub entriesStub;
     
     @PostConstruct
     void init() {

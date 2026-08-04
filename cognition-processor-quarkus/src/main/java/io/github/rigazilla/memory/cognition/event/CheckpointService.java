@@ -52,8 +52,8 @@ public class CheckpointService {
     @ConfigProperty(name = "memory-service.client-id")
     String clientId;
 
-    private ManagedChannel channel;
-    private AdminCheckpointServiceGrpc.AdminCheckpointServiceBlockingStub checkpointStub;
+    ManagedChannel channel;
+    AdminCheckpointServiceGrpc.AdminCheckpointServiceBlockingStub checkpointStub;
 
     private final ObjectMapper objectMapper;
 

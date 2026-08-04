@@ -54,9 +54,9 @@ public class MemoryJustifyService {
     @ConfigProperty(name = "memory-service.client-id")
     String clientId;
     
-    private ManagedChannel channel;
-    private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
-    private AdminEntriesServiceGrpc.AdminEntriesServiceBlockingStub entriesStub;
+    ManagedChannel channel;
+    AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
+    AdminEntriesServiceGrpc.AdminEntriesServiceBlockingStub entriesStub;
     
     @PostConstruct
     void init() {

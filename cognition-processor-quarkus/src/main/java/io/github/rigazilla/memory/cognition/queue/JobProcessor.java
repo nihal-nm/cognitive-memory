@@ -91,8 +91,8 @@ public class JobProcessor {
     @Inject
     MemoryWriter memoryWriter;
 
-    private ManagedChannel channel;
-    private AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub conversationsStub;
+    ManagedChannel channel;
+    AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub conversationsStub;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 

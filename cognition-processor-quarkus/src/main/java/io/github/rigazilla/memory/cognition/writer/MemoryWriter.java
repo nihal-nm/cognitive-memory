@@ -45,8 +45,8 @@ public class MemoryWriter {
     @ConfigProperty(name = "memory-service.api-key")
     String apiKey;
     
-    private ManagedChannel channel;
-    private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
+    ManagedChannel channel;
+    AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub memoriesStub;
     
     @PostConstruct
     void init() {

@@ -74,12 +74,12 @@ public class GrpcAdminEventClient {
     DirtyWindowRegistry windowRegistry;
 
     private ManagedChannel channel;
-    private final AtomicBoolean connected = new AtomicBoolean(false);
+    final AtomicBoolean connected = new AtomicBoolean(false);
     private final AtomicBoolean shouldReconnect = new AtomicBoolean(true);
     private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
     
     // Track last cursor for checkpointing
-    private volatile String lastEventCursor;
+    volatile String lastEventCursor;
     private final AtomicLong eventsAccepted = new AtomicLong(0);
 
     void onStart(@Observes StartupEvent event) {
@@ -201,7 +201,7 @@ public class GrpcAdminEventClient {
         LOG.infof("Subscribed to admin event stream (afterCursor: %s)", afterCursor);
     }
 
-    private void handleEvent(EventNotification event) {
+    void handleEvent(EventNotification event) {
         try {
             String eventType = event.getEvent();
             String kind = event.getKind();
@@ -326,7 +326,7 @@ public class GrpcAdminEventClient {
      * Extract a field value from JSON string (simple string search, not a full JSON parser).
      * Returns null if field not found.
      */
-    private String extractJsonField(String json, String fieldName) {
+    String extractJsonField(String json, String fieldName) {
         String searchPattern = "\"" + fieldName + "\":\"";
         int fieldIndex = json.indexOf(searchPattern);
         if (fieldIndex != -1) {
@@ -339,7 +339,7 @@ public class GrpcAdminEventClient {
         return null;
     }
 
-    private void saveCheckpoint() {
+    void saveCheckpoint() {
         if (lastEventCursor == null) {
             LOG.debug("No cursor to checkpoint");
             return;
