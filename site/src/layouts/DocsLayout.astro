@@ -1,0 +1,188 @@
+---
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import DocsSidebar from "../components/DocsSidebar.astro";
+import TableOfContents from "../components/TableOfContents.astro";
+
+interface Props {
+  title: string;
+  description?: string;
+  headings?: { depth: number; slug: string; text: string }[];
+}
+
+const { title, description = "Cognitive Memory Documentation" } = (Astro.props as any).content || {};
+const headings = (Astro.props as any).headings || [];
+const siteTitle = "Cognitive Memory Docs";
+const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${siteTitle}`;
+---
+
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+    <title>{fullTitle}</title>
+  </head>
+  <body class="min-h-screen flex flex-col bg-white dark:bg-surface-950">
+    <Header docsNav={true} headings={headings} />
+    <div class="flex-1 flex">
+      <aside
+        class="hidden lg:block sticky top-16 w-72 h-[calc(100vh-4rem)]
+               bg-white dark:bg-surface-900 border-r border-gray-200 dark:border-gray-800
+               overflow-y-auto shrink-0"
+      >
+        <DocsSidebar />
+      </aside>
+
+      <div class="flex-1 min-w-0">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <article
+            class="prose prose-gray dark:prose-invert max-w-none
+                         prose-headings:scroll-mt-20
+                         prose-a:text-primary-600 dark:prose-a:text-primary-400
+                         prose-code:text-primary-600 dark:prose-code:text-primary-400
+                         prose-code:before:content-none prose-code:after:content-none
+                         prose-pre:bg-gray-900 prose-pre:border-0"
+          >
+            <h1 class="text-3xl font-bold mb-8">{title}</h1>
+            <slot />
+          </article>
+        </div>
+      </div>
+
+      {
+        headings.length > 0 && (
+          <aside class="hidden xl:block w-64 flex-shrink-0">
+            <div class="sticky top-20 max-h-[calc(100vh-5rem)] overflow-y-auto py-8 pr-4">
+              <TableOfContents headings={headings} />
+            </div>
+          </aside>
+        )
+      }
+    </div>
+
+    <Footer />
+
+    <script>
+      function escapeHtml(text) {
+        return text
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function highlightJsonLine(lineText) {
+        const tokenPattern =
+          /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}\[\]:,]|\s+|[^\s{}\[\]:,"]+/g;
+        let html = "";
+        let match;
+
+        while ((match = tokenPattern.exec(lineText)) !== null) {
+          const token = match[0];
+
+          if (/^\s+$/.test(token)) {
+            html += escapeHtml(token);
+            continue;
+          }
+
+          if (/^"(?:\\.|[^"\\])*"$/.test(token)) {
+            const rest = lineText.slice(tokenPattern.lastIndex);
+            const isKey = /^\s*:/.test(rest);
+            html += `<span class="${isKey ? "json-key" : "json-string"}">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          if (/^-?\d/.test(token)) {
+            html += `<span class="json-number">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          if (/^(true|false|null)$/.test(token)) {
+            html += `<span class="json-literal">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          if (/^[{}\[\]:,]$/.test(token)) {
+            html += `<span class="json-punctuation">${escapeHtml(token)}</span>`;
+            continue;
+          }
+
+          html += `<span class="json-text">${escapeHtml(token)}</span>`;
+        }
+
+        return html;
+      }
+
+      function restyleJsonBlocks() {
+        document.querySelectorAll('pre[data-language="json"] code').forEach((code) => {
+          const lineNodes = Array.from(code.querySelectorAll(":scope > span.line"));
+
+          if (lineNodes.length === 0 || code.dataset.jsonStyled === "true") {
+            return;
+          }
+
+          lineNodes.forEach((lineNode) => {
+            lineNode.innerHTML = highlightJsonLine(lineNode.textContent || "");
+          });
+
+          code.dataset.jsonStyled = "true";
+        });
+      }
+
+      restyleJsonBlocks();
+
+      document.querySelectorAll("pre:not(.mermaid)").forEach((pre) => {
+        const btn = document.createElement("button");
+        btn.className = "code-copy-btn";
+        btn.setAttribute("aria-label", "Copy code");
+        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>`;
+
+        btn.addEventListener("click", async () => {
+          const code = pre.querySelector("code");
+          const text = code ? code.textContent : pre.textContent;
+
+          try {
+            await navigator.clipboard.writeText(text || "");
+            btn.classList.add("copied");
+            btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>`;
+
+            setTimeout(() => {
+              btn.classList.remove("copied");
+              btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>`;
+            }, 2000);
+          } catch (err) {
+            console.error("Failed to copy:", err);
+          }
+        });
+
+        pre.appendChild(btn);
+      });
+    </script>
+
+    <script type="module">
+      const mermaidBlocks = document.querySelectorAll("pre.mermaid");
+      if (mermaidBlocks.length > 0) {
+        const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+        const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: isDark ? "dark" : "default",
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        });
+        await mermaid.run({ nodes: mermaidBlocks });
+      }
+    </script>
+  </body>
+</html>

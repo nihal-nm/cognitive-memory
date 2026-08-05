@@ -1,0 +1,248 @@
+---
+openapi: 3.1.0
+components:
+  schemas:
+    EventStatus:
+      description: Event stream status
+      type: object
+      properties:
+        connected:
+          type: boolean
+          description: Whether the gRPC event stream to Memory Service is active
+        eventCount:
+          type: integer
+          format: int64
+          description: Total events received since startup
+        activeWindows:
+          type: integer
+          format: int32
+          description: Debounce windows currently accumulating events
+        oldestWindowAgeSeconds:
+          type: integer
+          format: int64
+          description: Age in seconds of the oldest active window
+    ManagedProcessInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        state:
+          $ref: "#/components/schemas/ManagedProcessState"
+    ManagedProcessInspection:
+      type: object
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        state:
+          $ref: "#/components/schemas/ManagedProcessState"
+        details:
+          type: object
+          additionalProperties: {}
+    ManagedProcessState:
+      type: string
+      enum:
+      - ENABLED
+      - DISABLED
+tags:
+- name: Event Status
+  description: Monitor the gRPC event stream and debounce windows
+- name: Memory Justification
+  description: Retrieve memories with full provenance and source conversation context
+- name: Process Management
+  description: Control and inspect cognitive processes
+- name: Profile Consolidation
+  description: Trigger LLM-based consolidation of user memories into structured profiles
+paths:
+  /api/consolidate/{userId}:
+    post:
+      summary: Consolidate user profile
+      description: "Loads all cognition memories for the user, consolidates them into\
+        \ a structured profile using an LLM, and writes the result back to Memory\
+        \ Service."
+      tags:
+      - Profile Consolidation
+      parameters:
+      - description: User ID to consolidate
+        example: alice
+        name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Profile consolidated successfully
+          content:
+            application/json:
+              schema: {}
+        "500":
+          description: Consolidation failed
+  /api/events/status:
+    get:
+      summary: Get event stream status
+      description: Returns the current state of the gRPC event stream connection and
+        pending debounce windows.
+      tags:
+      - Event Status
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventStatus"
+  /api/memories/{memoryId}/justify:
+    get:
+      summary: Get memory justification
+      description: "Fetches a memory and expands the entry IDs from its provenance\
+        \ into full conversation content, showing why the memory was created."
+      tags:
+      - Memory Justification
+      parameters:
+      - description: Memory UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        name: memoryId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Memory with expanded source entries
+          content:
+            application/json:
+              schema: {}
+        "404":
+          description: Memory not found
+        "500":
+          description: Failed to retrieve memory or source entries
+  /api/processes:
+    get:
+      summary: List all processes
+      description: Returns all registered cognitive processes and their current state.
+      tags:
+      - Process Management
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManagedProcessInfo"
+  /api/processes/{id}:
+    get:
+      summary: Inspect a process
+      description: "Returns detailed information about a specific process, including\
+        \ runtime statistics."
+      tags:
+      - Process Management
+      parameters:
+      - description: Process identifier
+        example: durable-memory-extraction
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Process details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedProcessInspection"
+        "404":
+          description: Process not found
+  /api/processes/{id}/disable:
+    post:
+      summary: Disable a process
+      description: "Disables a cognitive process, preventing it from processing events."
+      tags:
+      - Process Management
+      parameters:
+      - description: Process identifier
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Process disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedProcessInspection"
+        "404":
+          description: Process not found
+        "501":
+          description: Operation not supported for this process
+  /api/processes/{id}/enable:
+    post:
+      summary: Enable a process
+      description: Enables a previously disabled cognitive process.
+      tags:
+      - Process Management
+      parameters:
+      - description: Process identifier
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Process enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedProcessInspection"
+        "404":
+          description: Process not found
+        "501":
+          description: Operation not supported for this process
+  /api/processes/{id}/start:
+    post:
+      summary: Start a process
+      description: Triggers process startup if the process is not already running.
+      tags:
+      - Process Management
+      parameters:
+      - description: Process identifier
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Process started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedProcessInspection"
+        "404":
+          description: Process not found
+        "501":
+          description: Operation not supported for this process
+info:
+  title: Cognitive Memory API
+  version: 1.0.0-SNAPSHOT
+  description: "REST API for the Cognitive Memory processor. Provides management,\
+    \ monitoring, and inspection endpoints for the cognition layer that extracts salient\
+    \ memories from AI agent conversations."
+servers:
+- url: http://localhost:8090
+  description: Auto generated value
+- url: http://0.0.0.0:8090
+  description: Auto generated value

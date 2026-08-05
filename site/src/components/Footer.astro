@@ -1,0 +1,95 @@
+---
+const year = new Date().getFullYear();
+const basePath = import.meta.env.BASE_URL;
+---
+
+<footer class="border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-surface-900">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div>
+        <a href={basePath} class="flex items-center gap-2 font-bold text-xl mb-4">
+          <svg class="w-8 h-8 text-primary-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+            ></path>
+          </svg>
+          <span class="text-gray-900 dark:text-white">Cognitive Memory</span>
+        </a>
+        <p class="text-gray-600 dark:text-gray-400 max-w-md">
+          An intelligent cognition layer that extracts salient memories from AI agent conversations and stores them with
+          full provenance.
+        </p>
+      </div>
+
+      <div>
+        <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Documentation</h3>
+        <ul class="space-y-2 text-sm">
+          <li>
+            <a
+              href={`${basePath}docs/`}
+              class="text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+            >
+              Overview
+            </a>
+          </li>
+          <li>
+            <a
+              href={`${basePath}docs/api/`}
+              class="text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+            >
+              API Reference
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="font-semibold text-gray-900 dark:text-white mb-4">Community</h3>
+        <ul class="space-y-2 text-sm">
+          <li>
+            <a
+              href="https://github.com/rigazilla/cognitive-memory"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors inline-flex items-center gap-1"
+            >
+              GitHub
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+            </a>
+          </li>
+          <li>
+            <a
+              href="https://github.com/rigazilla/cognitive-memory/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors inline-flex items-center gap-1"
+            >
+              Issues
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div
+      class="border-t border-gray-200 dark:border-gray-800 mt-8 pt-8 text-center text-sm text-gray-600 dark:text-gray-400"
+    >
+      <p>&copy; {year} Cognitive Memory. Released under the Apache 2.0 License.</p>
+    </div>
+  </div>
+</footer>

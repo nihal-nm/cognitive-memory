@@ -1,0 +1,42 @@
+name: Verify OpenAPI spec is in sync
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cognition-processor-quarkus/src/main/java/**'
+      - 'cognition-processor-quarkus/pom.xml'
+      - 'site/public/openapi.*'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Regenerate OpenAPI spec
+        working-directory: cognition-processor-quarkus
+        run: ./mvnw -B compile quarkus:build -DskipTests
+
+      - name: Check for uncommitted changes
+        run: |
+          if [ "$(git diff --ignore-space-at-eol -- site/public/openapi.json site/public/openapi.yaml | wc -l)" -gt "0" ]; then
+            echo "::error::OpenAPI spec is out of sync with source code"
+            echo ""
+            echo "The generated OpenAPI spec does not match what is checked in."
+            echo "Run the following and commit the changes:"
+            echo ""
+            echo "  cd cognition-processor-quarkus && ./mvnw compile quarkus:build -DskipTests"
+            echo ""
+            git diff -- site/public/openapi.json site/public/openapi.yaml
+            exit 1
+          fi
+          echo "OpenAPI spec is in sync"

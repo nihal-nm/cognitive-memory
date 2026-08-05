@@ -1,0 +1,57 @@
+---
+import "../../../styles/global.css";
+import Header from "../../../components/Header.astro";
+import Footer from "../../../components/Footer.astro";
+import DocsSidebar from "../../../components/DocsSidebar.astro";
+
+const basePath = import.meta.env.BASE_URL;
+const title = "API Reference";
+const siteTitle = "Cognitive Memory Docs";
+const fullTitle = `${title} | ${siteTitle}`;
+---
+
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Cognitive Memory API Reference" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href={`${basePath}favicon.svg`} />
+    <title>{fullTitle}</title>
+  </head>
+  <body class="min-h-screen flex flex-col bg-white dark:bg-surface-950">
+    <Header docsNav={true} />
+    <div class="flex-1 flex">
+      <aside
+        class="hidden lg:block sticky top-16 w-72 h-[calc(100vh-4rem)]
+               bg-white dark:bg-surface-900 border-r border-gray-200 dark:border-gray-800
+               overflow-y-auto shrink-0"
+      >
+        <DocsSidebar />
+      </aside>
+
+      <div class="flex-1 min-w-0">
+        <script
+          is:inline
+          id="api-reference"
+          type="application/json"
+          data-url={`${basePath}openapi.json`}
+          data-configuration='{"theme":"default","layout":"modern","hideDownloadButton":false,"hideModels":false,"defaultHttpClient":{"targetKey":"shell","clientKey":"curl"}}'
+        ></script>
+        <script is:inline src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+      </div>
+    </div>
+
+    <Footer />
+
+    <style is:global>
+      .scalar-container {
+        min-height: calc(100vh - 4rem);
+      }
+      .scalar-app {
+        --scalar-font: ui-sans-serif, system-ui, sans-serif;
+      }
+    </style>
+  </body>
+</html>

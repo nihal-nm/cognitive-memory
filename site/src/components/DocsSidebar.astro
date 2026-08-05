@@ -1,0 +1,64 @@
+---
+const basePath = import.meta.env.BASE_URL;
+const currentPath = Astro.url.pathname;
+
+interface NavItem {
+  label: string;
+  href: string;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+const navigation: NavSection[] = [
+  {
+    title: "Getting Started",
+    items: [
+      { label: "Overview", href: "/docs/" },
+    ],
+  },
+  {
+    title: "API Reference",
+    items: [
+      { label: "API Reference (OpenAPI)", href: "/docs/api/" },
+    ],
+  },
+];
+
+function getFullHref(href: string) {
+  return basePath + href.slice(1);
+}
+
+function isActive(href: string) {
+  const fullHref = getFullHref(href);
+  if (href === "/docs/") {
+    return currentPath === fullHref || currentPath === fullHref.slice(0, -1);
+  }
+  return currentPath.startsWith(fullHref);
+}
+---
+
+<nav class="px-4 pb-8 pt-4" aria-label="Documentation navigation">
+  {
+    navigation.map((section) => (
+      <div class="sidebar-section">
+        <h3 class="sidebar-heading mb-2">{section.title}</h3>
+        <ul class="space-y-1">
+          {section.items.map((item) => (
+            <li>
+              <a
+                href={getFullHref(item.href)}
+                class:list={["sidebar-link", isActive(item.href) && "sidebar-link-active"]}
+                aria-current={isActive(item.href) ? "page" : undefined}
+              >
+                {item.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ))
+  }
+</nav>

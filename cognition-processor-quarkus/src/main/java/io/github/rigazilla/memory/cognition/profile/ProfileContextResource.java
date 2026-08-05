@@ -9,33 +9,37 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
-/**
- * REST endpoint for manual profile consolidation triggers.
- * Phase 0 prototype - manual trigger only, no scheduling.
- */
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+
 @Path("/api/consolidate")
+@Tag(name = "Profile Consolidation",
+    description = "Trigger LLM-based consolidation of user memories into structured profiles")
 public class ProfileContextResource {
-    
+
     private static final Logger LOG = Logger.getLogger(ProfileContextResource.class);
-    
+
     @Inject
     ProfileContextService profileContextService;
-    
-    /**
-     * Trigger profile consolidation for a specific user.
-     * 
-     * @param userId User ID to consolidate profile for
-     * @return Response with consolidation status
-     */
+
     @POST
     @Path("/{userId}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response consolidateProfile(@PathParam("userId") String userId) {
+    @Operation(summary = "Consolidate user profile",
+        description = "Loads all cognition memories for the user, consolidates them into "
+            + "a structured profile using an LLM, and writes the result back to Memory Service.")
+    @APIResponse(responseCode = "200", description = "Profile consolidated successfully")
+    @APIResponse(responseCode = "500", description = "Consolidation failed")
+    public Response consolidateProfile(
+            @Parameter(description = "User ID to consolidate", example = "alice")
+            @PathParam("userId") String userId) {
         LOG.infof("Received consolidation request for user: %s", userId);
-        
+
         try {
             ProfileSnapshot snapshot = profileContextService.consolidateProfile(userId);
-            
+
             return Response.ok()
                 .entity(new ConsolidationResponse(
                     "success",
@@ -45,7 +49,7 @@ public class ProfileContextResource {
                     snapshot.sections().size()
                 ))
                 .build();
-                
+
         } catch (Exception e) {
             LOG.errorf(e, "Failed to consolidate profile for user %s", userId);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -59,10 +63,7 @@ public class ProfileContextResource {
                 .build();
         }
     }
-    
-    /**
-     * Response DTO for consolidation endpoint.
-     */
+
     public record ConsolidationResponse(
         String status,
         String message,

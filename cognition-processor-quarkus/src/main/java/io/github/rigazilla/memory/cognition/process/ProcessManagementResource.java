@@ -12,24 +12,35 @@ import jakarta.ws.rs.core.MediaType;
 import java.util.List;
 import java.util.NoSuchElementException;
 
-/**
- * REST API for managing registered cognitive processes.
- */
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+
 @Path("/api/processes")
 @Produces(MediaType.APPLICATION_JSON)
+@Tag(name = "Process Management", description = "Control and inspect cognitive processes")
 public class ProcessManagementResource {
 
     @Inject
     CognitiveProcessManager manager;
 
     @GET
+    @Operation(summary = "List all processes",
+        description = "Returns all registered cognitive processes and their current state.")
     public List<ManagedProcessInfo> list() {
         return manager.listProcesses();
     }
 
     @GET
     @Path("/{id}")
-    public ManagedProcessInspection inspect(@PathParam("id") String processId) {
+    @Operation(summary = "Inspect a process",
+        description = "Returns detailed information about a specific process, including runtime statistics.")
+    @APIResponse(responseCode = "200", description = "Process details")
+    @APIResponse(responseCode = "404", description = "Process not found")
+    public ManagedProcessInspection inspect(
+            @Parameter(description = "Process identifier", example = "durable-memory-extraction")
+            @PathParam("id") String processId) {
         try {
             return manager.inspect(processId);
         } catch (NoSuchElementException e) {
@@ -39,7 +50,13 @@ public class ProcessManagementResource {
 
     @POST
     @Path("/{id}/start")
-    public ManagedProcessInspection start(@PathParam("id") String processId) {
+    @Operation(summary = "Start a process",
+        description = "Triggers process startup if the process is not already running.")
+    @APIResponse(responseCode = "200", description = "Process started")
+    @APIResponse(responseCode = "404", description = "Process not found")
+    @APIResponse(responseCode = "501", description = "Operation not supported for this process")
+    public ManagedProcessInspection start(
+            @Parameter(description = "Process identifier") @PathParam("id") String processId) {
         try {
             return manager.start(processId);
         } catch (NoSuchElementException e) {
@@ -51,7 +68,13 @@ public class ProcessManagementResource {
 
     @POST
     @Path("/{id}/enable")
-    public ManagedProcessInspection enable(@PathParam("id") String processId) {
+    @Operation(summary = "Enable a process",
+        description = "Enables a previously disabled cognitive process.")
+    @APIResponse(responseCode = "200", description = "Process enabled")
+    @APIResponse(responseCode = "404", description = "Process not found")
+    @APIResponse(responseCode = "501", description = "Operation not supported for this process")
+    public ManagedProcessInspection enable(
+            @Parameter(description = "Process identifier") @PathParam("id") String processId) {
         try {
             return manager.enable(processId);
         } catch (NoSuchElementException e) {
@@ -63,7 +86,13 @@ public class ProcessManagementResource {
 
     @POST
     @Path("/{id}/disable")
-    public ManagedProcessInspection disable(@PathParam("id") String processId) {
+    @Operation(summary = "Disable a process",
+        description = "Disables a cognitive process, preventing it from processing events.")
+    @APIResponse(responseCode = "200", description = "Process disabled")
+    @APIResponse(responseCode = "404", description = "Process not found")
+    @APIResponse(responseCode = "501", description = "Operation not supported for this process")
+    public ManagedProcessInspection disable(
+            @Parameter(description = "Process identifier") @PathParam("id") String processId) {
         try {
             return manager.disable(processId);
         } catch (NoSuchElementException e) {
