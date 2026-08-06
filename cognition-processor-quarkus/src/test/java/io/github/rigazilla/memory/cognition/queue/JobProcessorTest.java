@@ -8,6 +8,9 @@ import io.grpc.StatusRuntimeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -246,5 +249,107 @@ class JobProcessorTest {
         // covered by the end-to-end integration test suite where Arc CDI is live.
         assertEquals(0L, processor.getApproximateObservedAtCount(),
             "counter must start at zero before any job is processed");
+    }
+
+    // -------------------------------------------------------------------------
+    // parseEntryIdsFromCitations — citation parsing unit tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    void parseEntryIds_HappyPath_ReturnsReferencedUuids() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1", "E2", "uuid-2", "E3", "uuid-3");
+        List<String> citations = List.of("E1: user prefers dark mode", "E3: user likes Python");
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertEquals(List.of("uuid-1", "uuid-3"), result);
+    }
+
+    @Test
+    void parseEntryIds_NoPrefixCitations_ReturnsEmpty() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1");
+        List<String> citations = List.of("user prefers dark mode", "another citation");
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertTrue(result.isEmpty(), "citations without E<n>: prefix must return empty list");
+    }
+
+    @Test
+    void parseEntryIds_UnknownEntryRef_IsIgnored() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1");
+        List<String> citations = List.of("E99: some text not in mapping");
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertTrue(result.isEmpty(), "unknown E<n> reference must be ignored");
+    }
+
+    @Test
+    void parseEntryIds_DuplicateCitations_Deduplicated() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1");
+        List<String> citations = List.of("E1: first mention", "E1: second mention");
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertEquals(List.of("uuid-1"), result, "duplicate entry references must be deduplicated");
+    }
+
+    @Test
+    void parseEntryIds_NullCitationInList_IsSkipped() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1");
+        List<String> citations = new java.util.ArrayList<>();
+        citations.add(null);
+        citations.add("E1: valid citation");
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertEquals(List.of("uuid-1"), result, "null citations must be skipped without error");
+    }
+
+    @Test
+    void parseEntryIds_NonDigitsBetweenEAndColon_IsIgnored() {
+        // "Error:", "En:", "E1abc:" must NOT be treated as entry references
+        Map<String, String> mapping = Map.of("E1", "uuid-1");
+        List<String> citations = List.of("Error: something failed", "En: note", "E1abc: mixed");
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertTrue(result.isEmpty(), "non-digit E-prefix patterns must not match");
+    }
+
+    @Test
+    void parseEntryIds_MixedCitations_OnlyPrefixedResolved() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1", "E2", "uuid-2");
+        List<String> citations = List.of(
+                "E1: cited entry",
+                "no prefix here",
+                "E2: another cited entry",
+                "Error: not an entry ref"
+        );
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertEquals(List.of("uuid-1", "uuid-2"), result);
+    }
+
+    @Test
+    void parseEntryIds_EmptyCitationsList_ReturnsEmpty() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1");
+
+        List<String> result = processor.parseEntryIdsFromCitations(Collections.emptyList(), mapping);
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void parseEntryIds_PreservesInsertionOrder() {
+        Map<String, String> mapping = Map.of("E1", "uuid-1", "E2", "uuid-2", "E3", "uuid-3");
+        List<String> citations = List.of("E3: third", "E1: first", "E2: second");
+
+        List<String> result = processor.parseEntryIdsFromCitations(citations, mapping);
+
+        assertEquals(List.of("uuid-3", "uuid-1", "uuid-2"), result,
+                "insertion order of first occurrence must be preserved");
     }
 }

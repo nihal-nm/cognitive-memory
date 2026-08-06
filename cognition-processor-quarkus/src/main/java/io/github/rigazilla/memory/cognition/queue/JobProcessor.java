@@ -34,7 +34,10 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -364,12 +367,51 @@ public class JobProcessor {
                     return fallback;
                 });
 
-                memoryWriter.writeMemories(userId, verification.verified(), provenance, observedAt);
+                // Get entry ID mapping for citation parsing
+                Map<String, String> entryMapping = evidence.getEntryIdMapping();
+
+                // Write each memory with refined provenance based on citations
+                int writtenCount = 0;
+                int refinedCount = 0;
+                for (MemoryCandidate candidate : verification.verified()) {
+                    // Parse citations to extract referenced entry IDs
+                    List<String> referencedEntryIds = parseEntryIdsFromCitations(
+                        candidate.citations(), entryMapping);
+
+                    // Create per-memory provenance with refined entry IDs
+                    Provenance memoryProvenance;
+                    if (!referencedEntryIds.isEmpty()) {
+                        // Use refined entry IDs from citations
+                        memoryProvenance = new Provenance(
+                            provenance.conversationId(),
+                            referencedEntryIds,
+                            provenance.firstEventCursor(),
+                            provenance.latestEventCursor(),
+                            provenance.batchTrigger(),
+                            provenance.sourceHash(),
+                            provenance.evidenceBaseId(),
+                            provenance.evidenceBaseHash(),
+                            provenance.runtimeId(),
+                            provenance.runtimeVersion(),
+                            provenance.processedAt()
+                        );
+                        refinedCount++;
+                        LOG.debugf("  Refined provenance for memory: %d entry IDs from citations",
+                            referencedEntryIds.size());
+                    } else {
+                        // Fallback: use all entry IDs from batch
+                        memoryProvenance = provenance;
+                        LOG.debugf("  No entry IDs in citations, using batch-level provenance (%d entries)",
+                            provenance.entryIds().size());
+                    }
+
+                    memoryWriter.writeMemory(userId, candidate, memoryProvenance, observedAt);
+                    writtenCount++;
+                }
+
                 LOG.infof("  ✓ Successfully wrote %d memories to namespace: [\"user\", \"%s\", \"cognition.v1\", *]"
-                        + " (observedAt=%s)",
-                    verification.verified().size(), userId, observedAt);
-                LOG.debugf("  ✓ Provenance recorded: conversation=%s, entries=%d, trigger=%s",
-                    provenance.conversationId(), provenance.entryIds().size(), provenance.batchTrigger());
+                        + " (observedAt=%s, refined=%d, batch-level=%d)",
+                    writtenCount, userId, observedAt, refinedCount, writtenCount - refinedCount);
             } else {
                 LOG.infof("  [4/5] No verified memories to write");
             }
@@ -382,6 +424,47 @@ public class JobProcessor {
             LOG.errorf(e, "✗ Job failed after %dms: %s", duration, job);
             throw new JobProcessingException("Failed to process job for conversation " + job.conversationId(), e);
         }
+    }
+
+    /**
+     * Parse entry IDs from LLM citations.
+     * Citations are expected in format: "E1: quote text" or "E2: another quote"
+     * 
+     * @param citations List of citation strings from LLM
+     * @param entryMapping Map of "E1" -> actual UUID
+     * @return List of actual entry UUIDs referenced in citations
+     */
+    // Package-private for unit testing
+    List<String> parseEntryIdsFromCitations(List<String> citations, Map<String, String> entryMapping) {
+        LinkedHashSet<String> entryIds = new LinkedHashSet<>();
+
+        for (String citation : citations) {
+            if (citation == null || citation.isEmpty()) {
+                continue;
+            }
+
+            // Match only "E<digits>:" pattern at start — e.g. E1:, E12:
+            // Rejects "Error:", "En:", "E1abc:" etc.
+            if (citation.startsWith("E")) {
+                int colonIndex = citation.indexOf(":");
+                if (colonIndex > 1) {
+                    String between = citation.substring(1, colonIndex);
+                    if (!between.isEmpty() && between.chars().allMatch(Character::isDigit)) {
+                        String entryRef = citation.substring(0, colonIndex).trim();
+                        String actualEntryId = entryMapping.get(entryRef);
+
+                        if (actualEntryId != null) {
+                            entryIds.add(actualEntryId);
+                            LOG.debugf("    Parsed entry reference: %s -> %s", entryRef, actualEntryId);
+                        } else {
+                            LOG.debugf("    Unknown entry reference in citation: %s", entryRef);
+                        }
+                    }
+                }
+            }
+        }
+
+        return new ArrayList<>(entryIds);
     }
 
     /**

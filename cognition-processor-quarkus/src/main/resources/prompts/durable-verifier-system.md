@@ -13,6 +13,7 @@
   1. **Check Citations**: Verify that ALL citations can be found as substrings in the transcript text
     - The citation does NOT need to be an exact full-line match — it is valid if it appears anywhere within a transcript line
     - The `[timestamp] [ROLE]` prefix is metadata, not part of the spoken text — citations that omit it are valid
+    - **IMPORTANT**: Preserve entry references like "E1:", "E2:", etc. at the start of citations — these are required for provenance tracking
     - Minor whitespace or punctuation differences are acceptable
     - Completely missing or fabricated citations → REJECT
 

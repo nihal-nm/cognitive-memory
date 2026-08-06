@@ -1,10 +1,15 @@
 package io.github.rigazilla.memory.cognition.evidence;
 
+import com.google.protobuf.ByteString;
 import io.github.chirino.memory.grpc.v1.Entry;
 
+import java.nio.ByteBuffer;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Container for evidence used in memory extraction.
@@ -66,42 +71,84 @@ public class EvidencePack {
     }
 
     /**
-     * Format evidence as text for LLM consumption.
-     * Converts protobuf entries to readable conversation format.
+     * A single indexed transcript entry, produced by one shared filtering pass.
+     * Carries everything needed by both formatAsText() and getEntryIdMapping().
      */
-    public String formatAsText() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("=== CONVERSATION TRANSCRIPT ===\n\n");
+    private record IndexedEntry(int index, String entryId, String role, String text, String createdAt) {}
 
+    /**
+     * Single filtering pass over transcriptEntries that produces IndexedEntry records.
+     * Both formatAsText() and getEntryIdMapping() derive their output from this list,
+     * ensuring the E<n> indices are always in sync.
+     */
+    private List<IndexedEntry> buildIndexedEntries() {
+        List<IndexedEntry> result = new java.util.ArrayList<>();
+        int index = 1;
         for (Entry entry : transcriptEntries) {
-            // Extract role and text from content
-            // History entries have content_type="history" or "history/lc4j" or similar variants
             String contentType = entry.getContentType();
             if (contentType != null && contentType.startsWith("history") && entry.getContentCount() > 0) {
                 var content = entry.getContent(0);
                 if (content.hasStructValue()) {
                     var struct = content.getStructValue();
-                    String role = struct.getFieldsOrDefault("role",
-                        com.google.protobuf.Value.newBuilder().setStringValue("UNKNOWN").build())
-                        .getStringValue();
-
-                    // Extract text - different structure for history vs history/lc4j
                     String text = extractTextFromStruct(struct);
-
-                    // Only include if we got actual text
                     if (!text.isEmpty()) {
+                        String role = struct.getFieldsOrDefault("role",
+                            com.google.protobuf.Value.newBuilder().setStringValue("UNKNOWN").build())
+                            .getStringValue();
                         String createdAt = entry.getCreatedAt();
-                        if (createdAt != null && !createdAt.isEmpty()) {
-                            sb.append(String.format("[%s] [%s] %s\n\n", createdAt, role, text));
-                        } else {
-                            sb.append(String.format("[%s] %s\n\n", role, text));
-                        }
+                        String entryId = bytesToUuid(entry.getId());
+                        result.add(new IndexedEntry(index, entryId, role, text, createdAt));
+                        index++;
                     }
                 }
             }
         }
+        return result;
+    }
 
+    /**
+     * Format evidence as text for LLM consumption.
+     * Converts protobuf entries to readable conversation format.
+     * Each entry is prefixed with [E1], [E2], etc. for citation tracking.
+     */
+    public String formatAsText() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== CONVERSATION TRANSCRIPT ===\n\n");
+        for (IndexedEntry e : buildIndexedEntries()) {
+            if (e.createdAt() != null && !e.createdAt().isEmpty()) {
+                sb.append(String.format("[E%d] [%s] [%s] %s\n\n", e.index(), e.createdAt(), e.role(), e.text()));
+            } else {
+                sb.append(String.format("[E%d] [%s] %s\n\n", e.index(), e.role(), e.text()));
+            }
+        }
         return sb.toString();
+    }
+
+    /**
+     * Get mapping from short entry references (E1, E2, etc.) to actual entry UUIDs.
+     * Used to resolve entry IDs from LLM citations back to actual entry IDs.
+     *
+     * @return Map of "E1" -> "uuid-string", "E2" -> "uuid-string", etc.
+     */
+    public Map<String, String> getEntryIdMapping() {
+        Map<String, String> mapping = new LinkedHashMap<>();
+        for (IndexedEntry e : buildIndexedEntries()) {
+            mapping.put("E" + e.index(), e.entryId());
+        }
+        return mapping;
+    }
+
+    /**
+     * Convert protobuf ByteString (16-byte big-endian) to UUID string.
+     */
+    private String bytesToUuid(ByteString bytes) {
+        if (bytes.size() != 16) {
+            return "(invalid-uuid)";
+        }
+        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
+        long mostSigBits = buffer.getLong();
+        long leastSigBits = buffer.getLong();
+        return new UUID(mostSigBits, leastSigBits).toString();
     }
 
     /**

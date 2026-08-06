@@ -157,13 +157,43 @@ public class MemoryWriter {
     
     /**
      * Build protobuf Value for citations array.
+     * Strips entry reference prefixes (E1:, E2:, etc.) before storage.
+     * The E prefix is used internally for provenance tracking but should not appear in stored citations.
      */
     private Value buildCitationsValue(List<String> citations) {
         com.google.protobuf.ListValue.Builder listBuilder = com.google.protobuf.ListValue.newBuilder();
         for (String citation : citations) {
-            listBuilder.addValues(Value.newBuilder().setStringValue(citation).build());
+            String cleanedCitation = stripEntryReference(citation);
+            listBuilder.addValues(Value.newBuilder().setStringValue(cleanedCitation).build());
         }
         return Value.newBuilder().setListValue(listBuilder.build()).build();
+    }
+    
+    /**
+     * Strip entry reference prefix (E1:, E2:, etc.) from citation.
+     * Returns the citation text without the entry reference.
+     * 
+     * @param citation Citation string, possibly with "E<number>: " prefix
+     * @return Citation text without entry reference prefix
+     */
+    private String stripEntryReference(String citation) {
+        if (citation == null || citation.isEmpty()) {
+            return citation;
+        }
+
+        // Match only "E<digits>:" pattern at start — e.g. E1:, E12:
+        // Rejects "Error:", "En:", "E1abc:" etc.
+        if (citation.startsWith("E")) {
+            int colonIndex = citation.indexOf(":");
+            if (colonIndex > 1) {
+                String between = citation.substring(1, colonIndex);
+                if (!between.isEmpty() && between.chars().allMatch(Character::isDigit)) {
+                    return citation.substring(colonIndex + 1).trim();
+                }
+            }
+        }
+
+        return citation;
     }
 
     /**

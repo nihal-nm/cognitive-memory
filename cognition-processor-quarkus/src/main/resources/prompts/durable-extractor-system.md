@@ -35,12 +35,19 @@ When the transcript states a specific name, place, title, number, or detail, you
 - Transcript says "figurines" → write "figurines", NOT "items"
 - Transcript says "the poster said 'Love is Love'" → write exactly that, NOT "saw posters"
 
-### Resolve Relative Dates
-Each transcript entry has a timestamp in brackets, e.g., `[2023-07-06T14:00:00Z]`. When someone says "last week", "yesterday", "recently", etc., you MUST resolve it to an approximate absolute date using that entry's timestamp.
+### Entry References
+Each transcript entry is prefixed with an entry reference like `[E1]`, `[E2]`, etc. These are opaque identifiers used for citation tracking. When providing citations, you MUST include the entry reference at the start of each citation.
 
-- `[2023-07-06T...] "I had a picnic last week"` → "had a picnic around late June 2023"
-- `[2023-08-13T...] "My daughter's birthday was yesterday"` → "daughter's birthday on August 12, 2023"
-- `[2023-10-21T...] "We went on a road trip last weekend"` → "went on a road trip around October 14-15, 2023"
+Example citation format: `"E1: I prefer dark mode for all my applications"`
+
+The entry reference allows us to trace which specific conversation entries contributed to each extracted memory.
+
+### Resolve Relative Dates
+Each transcript entry has a timestamp in brackets, e.g., `[E1] [2023-07-06T14:00:00Z]`. When someone says "last week", "yesterday", "recently", etc., you MUST resolve it to an approximate absolute date using that entry's timestamp.
+
+- `[E1] [2023-07-06T...] "I had a picnic last week"` → "had a picnic around late June 2023"
+- `[E5] [2023-08-13T...] "My daughter's birthday was yesterday"` → "daughter's birthday on August 12, 2023"
+- `[E12] [2023-10-21T...] "We went on a road trip last weekend"` → "went on a road trip around October 14-15, 2023"
 
 NEVER leave relative time references ("last week", "yesterday", "recently") in the memory content.
 

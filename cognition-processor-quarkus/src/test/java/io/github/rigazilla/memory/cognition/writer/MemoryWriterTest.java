@@ -258,6 +258,56 @@ class MemoryWriterTest {
     }
 
     @Test
+    void testWriteMemory_StripsEntryReferencesFromCitations() {
+        // Given: Memory with citations containing E prefix (E1:, E2:, etc.)
+        String userId = "user-citations-strip";
+        MemoryCandidate candidate = new MemoryCandidate(
+            "fact",
+            "Alice is a student in computer science",
+            0.95,
+            List.of(
+                "E1: Hey my name is Alice, I'm a student in computer science",
+                "E2: I love programming and algorithms",
+                "Regular citation without prefix"
+            )
+        );
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When: Write memory
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
+
+        // Then: Citations should have E prefix stripped
+        ArgumentCaptor<AdminPutMemoryRequest> captor = 
+            ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+
+        Struct value = captor.getValue().getValue();
+        var citationsList = value.getFieldsMap().get("citations").getListValue();
+        
+        assertEquals(3, citationsList.getValuesCount());
+        
+        // First citation: E1: should be stripped
+        assertEquals("Hey my name is Alice, I'm a student in computer science",
+            citationsList.getValues(0).getStringValue(),
+            "E1: prefix should be stripped from first citation");
+        
+        // Second citation: E2: should be stripped
+        assertEquals("I love programming and algorithms",
+            citationsList.getValues(1).getStringValue(),
+            "E2: prefix should be stripped from second citation");
+        
+        // Third citation: no prefix, should remain unchanged
+        assertEquals("Regular citation without prefix",
+            citationsList.getValues(2).getStringValue(),
+            "Citation without prefix should remain unchanged");
+    }
+
+    @Test
     void testWriteMemory_GeneratesUniqueKeys() {
         // Given: Two identical candidates
         String userId = "user-keys";
