@@ -1,6 +1,7 @@
 package io.github.rigazilla.memory.cognition.writer;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.NullValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
@@ -81,7 +82,8 @@ public class MemoryWriter {
      * @param provenance Provenance information for audit and replay
      * @return Memory write result with ID and metadata
      */
-    public MemoryWriteResult writeMemory(String userId, MemoryCandidate candidate, Provenance provenance) {
+    public MemoryWriteResult writeMemory(String userId, MemoryCandidate candidate, Provenance provenance,
+            String observedAt) {
         try {
             LOG.debugf("Writing memory: type=%s, userId=%s, content='%s'",
                 candidate.type(), userId,
@@ -95,11 +97,20 @@ public class MemoryWriter {
             // Generate unique key for this memory
             String key = UUID.randomUUID().toString();
 
-            // Build value struct with memory content, metadata, and provenance
+            // observedAt = when the fact was stated (earliest entry timestamp in the batch)
+            // effectiveAt = defaults to observedAt (can be refined by LLM in a future phase)
+            String effectiveAt = observedAt;
+
+            // Build value struct with memory content, metadata, temporal fields, and provenance.
+            // expires_at is null — TTL not yet supported; placeholder for a future phase.
             Struct value = Struct.newBuilder()
                 .putFields("content", Value.newBuilder().setStringValue(candidate.content()).build())
                 .putFields("confidence", Value.newBuilder().setNumberValue(candidate.confidence()).build())
                 .putFields("citations", buildCitationsValue(candidate.citations()))
+                .putFields("observed_at", Value.newBuilder().setStringValue(observedAt).build())
+                .putFields("effective_at", Value.newBuilder().setStringValue(effectiveAt).build())
+                .putFields("expires_at", Value.newBuilder().setNullValue(
+                    NullValue.NULL_VALUE).build())
                 .putFields("provenance", buildProvenanceValue(provenance))
                 .build();
 
@@ -109,6 +120,8 @@ public class MemoryWriter {
                 .setValue(value)
                 .putIndex("content", candidate.content())
                 .putIndex("type", candidate.type())
+                .putIndex("observed_at", observedAt)
+                .putIndex("effective_at", effectiveAt)
                 .build();
 
             // Call gRPC service
@@ -134,11 +147,11 @@ public class MemoryWriter {
      * @return List of write results
      */
     public List<MemoryWriteResult> writeMemories(String userId,
-            List<MemoryCandidate> candidates, Provenance provenance) {
-        LOG.infof("Writing %d memories for user %s", candidates.size(), userId);
+            List<MemoryCandidate> candidates, Provenance provenance, String observedAt) {
+        LOG.infof("Writing %d memories for user %s (observedAt=%s)", candidates.size(), userId, observedAt);
 
         return candidates.stream()
-            .map(candidate -> writeMemory(userId, candidate, provenance))
+            .map(candidate -> writeMemory(userId, candidate, provenance, observedAt))
             .toList();
     }
     

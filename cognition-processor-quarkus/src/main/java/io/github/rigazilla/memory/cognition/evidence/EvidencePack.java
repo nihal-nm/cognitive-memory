@@ -2,7 +2,9 @@ package io.github.rigazilla.memory.cognition.evidence;
 
 import io.github.chirino.memory.grpc.v1.Entry;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Container for evidence used in memory extraction.
@@ -51,6 +53,18 @@ public class EvidencePack {
         return null;
     }
     
+    /**
+     * Returns the earliest {@code created_at} timestamp across all transcript entries,
+     * as an ISO-8601 string.  Used as the {@code observed_at} baseline when writing memories.
+     * Returns an empty Optional when there are no entries or none have a created_at value.
+     */
+    public Optional<String> earliestCreatedAt() {
+        return transcriptEntries.stream()
+            .map(Entry::getCreatedAt)
+            .filter(s -> s != null && !s.isBlank())
+            .min(Comparator.naturalOrder());
+    }
+
     /**
      * Format evidence as text for LLM consumption.
      * Converts protobuf entries to readable conversation format.

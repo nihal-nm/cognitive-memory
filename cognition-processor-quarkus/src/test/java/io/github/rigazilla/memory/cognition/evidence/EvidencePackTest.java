@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -272,5 +273,86 @@ class EvidencePackTest {
         // Assert
         assertThat(retrieved).isEqualTo(entries);
         assertThat(retrieved).hasSize(2);
+    }
+
+    // -------------------------------------------------------------------------
+    // earliestCreatedAt — temporal metadata sourcing
+    // -------------------------------------------------------------------------
+
+    @Test
+    void earliestCreatedAtReturnsMinimumTimestamp() {
+        // Arrange
+        Entry e1 = Entry.newBuilder().setCreatedAt("2025-01-15T10:00:00Z").build();
+        Entry e2 = Entry.newBuilder().setCreatedAt("2025-01-15T09:00:00Z").build();
+        Entry e3 = Entry.newBuilder().setCreatedAt("2025-01-15T11:00:00Z").build();
+
+        // Act
+        Optional<String> result = new EvidencePack(List.of(e1, e2, e3)).earliestCreatedAt();
+
+        // Assert
+        assertThat(result).isPresent().hasValue("2025-01-15T09:00:00Z");
+    }
+
+    @Test
+    void earliestCreatedAtIsEmptyWhenNoEntries() {
+        // Arrange / Act / Assert
+        assertThat(new EvidencePack(List.of()).earliestCreatedAt()).isEmpty();
+    }
+
+    @Test
+    void earliestCreatedAtSkipsBlankTimestamps() {
+        // Arrange
+        Entry noTimestamp = Entry.newBuilder().build();
+        Entry withTimestamp = Entry.newBuilder().setCreatedAt("2025-03-01T08:00:00Z").build();
+
+        // Act
+        Optional<String> result = new EvidencePack(List.of(noTimestamp, withTimestamp)).earliestCreatedAt();
+
+        // Assert
+        assertThat(result).isPresent().hasValue("2025-03-01T08:00:00Z");
+    }
+
+    @Test
+    void earliestCreatedAtIsEmptyWhenAllTimestampsBlank() {
+        // Arrange
+        Entry e1 = Entry.newBuilder().build();
+        Entry e2 = Entry.newBuilder().build();
+
+        // Act / Assert
+        assertThat(new EvidencePack(List.of(e1, e2)).earliestCreatedAt()).isEmpty();
+    }
+
+    @Test
+    void earliestCreatedAtSkipsWhitespaceOnlyTimestamp() {
+        // Arrange — EP-N1: whitespace-only createdAt must be excluded by the isBlank() filter
+        Entry blank = Entry.newBuilder().setCreatedAt("   ").build();
+        Entry valid = Entry.newBuilder().setCreatedAt("2025-05-20T07:00:00Z").build();
+
+        // Act
+        Optional<String> result = new EvidencePack(List.of(blank, valid)).earliestCreatedAt();
+
+        // Assert
+        assertThat(result)
+            .as("whitespace-only createdAt must not be treated as a valid timestamp")
+            .isPresent()
+            .hasValue("2025-05-20T07:00:00Z");
+    }
+
+    @Test
+    void earliestCreatedAtWithAllIdenticalTimestampsReturnsTheTimestamp() {
+        // Arrange — EP-N2: when all entries share the same timestamp min() must still return it
+        String ts = "2025-04-10T12:00:00Z";
+        Entry e1 = Entry.newBuilder().setCreatedAt(ts).build();
+        Entry e2 = Entry.newBuilder().setCreatedAt(ts).build();
+        Entry e3 = Entry.newBuilder().setCreatedAt(ts).build();
+
+        // Act
+        Optional<String> result = new EvidencePack(List.of(e1, e2, e3)).earliestCreatedAt();
+
+        // Assert
+        assertThat(result)
+            .as("must return a value even when all timestamps are equal")
+            .isPresent()
+            .hasValue(ts);
     }
 }

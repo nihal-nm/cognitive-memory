@@ -35,6 +35,9 @@ import static org.mockito.Mockito.*;
  */
 class MemoryWriterTest {
 
+    /** Fixture observed_at used wherever writeMemory/writeMemories requires a timestamp string. */
+    private static final String TEST_OBSERVED_AT = "2025-01-15T10:00:00Z";
+
     private MemoryWriter writer;
     private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub mockMemoriesStub;
     private ManagedChannel mockChannel;
@@ -72,7 +75,7 @@ class MemoryWriterTest {
         when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
 
         // When: Write memory
-        MemoryWriteResult writeResult = writer.writeMemory(userId, candidate, provenance);
+        MemoryWriteResult writeResult = writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
 
         // Then: Should return result
         assertNotNull(writeResult);
@@ -92,16 +95,22 @@ class MemoryWriterTest {
         when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
 
         // When: Write memory
-        writer.writeMemory(userId, candidate, provenance);
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
 
         // Then: Should use correct namespace
-        ArgumentCaptor<AdminPutMemoryRequest> captor = 
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
             ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
         verify(mockMemoriesStub).putMemory(captor.capture());
 
         AdminPutMemoryRequest request = captor.getValue();
-        assertEquals(List.of("user", userId, "cognition.v1", "preference"), 
+        assertEquals(List.of("user", userId, "cognition.v1", "preference"),
                     request.getNamespaceList());
+
+        // Temporal fields must be present in the index map for queryability (AC #8)
+        assertEquals(TEST_OBSERVED_AT, request.getIndexMap().get("observed_at"),
+            "observed_at must be indexed for search queries");
+        assertEquals(TEST_OBSERVED_AT, request.getIndexMap().get("effective_at"),
+            "effective_at must be indexed for search queries");
     }
 
     @Test
@@ -122,7 +131,7 @@ class MemoryWriterTest {
         when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
 
         // When: Write memory
-        writer.writeMemory(userId, candidate, provenance);
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
 
         // Then: Should include content and confidence in value
         ArgumentCaptor<AdminPutMemoryRequest> captor = 
@@ -160,7 +169,7 @@ class MemoryWriterTest {
         when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
 
         // When: Write memory
-        writer.writeMemory(userId, candidate, provenance);
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
 
         // Then: Should include provenance in value
         ArgumentCaptor<AdminPutMemoryRequest> captor = 
@@ -190,7 +199,7 @@ class MemoryWriterTest {
 
         // When/Then: Should throw MemoryWriteException
         assertThrows(MemoryWriter.MemoryWriteException.class,
-                    () -> writer.writeMemory(userId, candidate, provenance));
+                    () -> writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT));
     }
 
     @Test
@@ -210,7 +219,7 @@ class MemoryWriterTest {
         when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
 
         // When: Write batch
-        List<MemoryWriteResult> results = writer.writeMemories(userId, candidates, provenance);
+        List<MemoryWriteResult> results = writer.writeMemories(userId, candidates, provenance, TEST_OBSERVED_AT);
 
         // Then: Should write all memories
         assertEquals(3, results.size());
@@ -235,7 +244,7 @@ class MemoryWriterTest {
         when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
 
         // When: Write memory
-        writer.writeMemory(userId, candidate, provenance);
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
 
         // Then: Should include citations array
         ArgumentCaptor<AdminPutMemoryRequest> captor = 
@@ -261,8 +270,8 @@ class MemoryWriterTest {
         when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
 
         // When: Write same candidate twice
-        writer.writeMemory(userId, candidate, provenance);
-        writer.writeMemory(userId, candidate, provenance);
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
 
         // Then: Should generate different keys
         ArgumentCaptor<AdminPutMemoryRequest> captor = 
@@ -271,6 +280,56 @@ class MemoryWriterTest {
 
         List<AdminPutMemoryRequest> requests = captor.getAllValues();
         assertNotEquals(requests.get(0).getKey(), requests.get(1).getKey());
+    }
+
+    // -------------------------------------------------------------------------
+    // Temporal struct shape — value fields and index map
+    // -------------------------------------------------------------------------
+
+    @Test
+    void testWriteMemory_TemporalFieldsPresentInValueStruct() {
+        // Given
+        String userId = "user-temporal";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "User prefers dark mode", 0.9, List.of());
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+            .setId(uuidToBytes(UUID.randomUUID().toString()))
+            .build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When
+        writer.writeMemory(userId, candidate, provenance, TEST_OBSERVED_AT);
+
+        // Then: observed_at, effective_at, expires_at must be in the value struct
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+            ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+
+        Struct value = captor.getValue().getValue();
+        assertTrue(value.containsFields("observed_at"), "observed_at must be present in value struct");
+        assertTrue(value.containsFields("effective_at"), "effective_at must be present in value struct");
+        assertTrue(value.containsFields("expires_at"), "expires_at placeholder must be present in value struct");
+        assertEquals(TEST_OBSERVED_AT, value.getFieldsOrThrow("observed_at").getStringValue());
+        assertEquals(TEST_OBSERVED_AT, value.getFieldsOrThrow("effective_at").getStringValue());
+        assertEquals(com.google.protobuf.Value.KindCase.NULL_VALUE,
+            value.getFieldsOrThrow("expires_at").getKindCase(),
+            "expires_at must be stored as NULL_VALUE");
+    }
+
+    @Test
+    void testWriteMemory_TemporalFieldsAbsentInPreFixStruct() {
+        // Given: struct built without temporal fields (baseline confirming the issue this fix addresses)
+        com.google.protobuf.Struct valueBefore = com.google.protobuf.Struct.newBuilder()
+            .putFields("content", com.google.protobuf.Value.newBuilder()
+                .setStringValue("User prefers Go").build())
+            .build();
+
+        // Then: no temporal fields in a pre-fix struct
+        assertFalse(valueBefore.containsFields("observed_at"),
+            "observed_at must be absent in pre-fix struct");
+        assertFalse(valueBefore.containsFields("effective_at"),
+            "effective_at must be absent in pre-fix struct");
     }
 
     // Helper methods

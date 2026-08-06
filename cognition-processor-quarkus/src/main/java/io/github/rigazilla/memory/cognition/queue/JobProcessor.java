@@ -37,6 +37,7 @@ import org.jboss.logging.Logger;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Processes jobs from conversation queues on virtual threads.
@@ -95,6 +96,18 @@ public class JobProcessor {
     AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub conversationsStub;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * Counts batches where no entry {@code created_at} was available and ingestion
+     * time was substituted as {@code observed_at}. Surfaced via the temporal
+     * enrichment process inspect endpoint so operators can assess data quality.
+     */
+    private final AtomicLong approximateObservedAtCount = new AtomicLong(0);
+
+    /** Returns the number of batches written with an approximate {@code observed_at}. */
+    public long getApproximateObservedAtCount() {
+        return approximateObservedAtCount.get();
+    }
 
     @PostConstruct
     void init() {
@@ -337,9 +350,24 @@ public class JobProcessor {
                 LOG.infof("  [4/5] Writing %d verified memories to memory-service for user: %s",
                     verification.verified().size(), userId);
 
-                memoryWriter.writeMemories(userId, verification.verified(), provenance);
-                LOG.infof("  ✓ Successfully wrote %d memories to namespace: [\"user\", \"%s\", \"cognition.v1\", *]",
-                    verification.verified().size(), userId);
+                // observed_at = earliest entry createdAt in this batch (when the facts were stated).
+                // Falls back to provenance.processedAt() when no entry timestamps are available.
+                // Log a warning: this fallback uses ingestion time, NOT the time facts were stated,
+                // which violates the spec. Any memories written with this timestamp should be
+                // treated as having an approximate observed_at.
+                String observedAt = evidence.earliestCreatedAt().orElseGet(() -> {
+                    String fallback = provenance.processedAt().toString();
+                    LOG.warnf("No entry createdAt found in evidence for conversation %s; "
+                        + "falling back to ingestion time %s — observed_at will be approximate",
+                        provenance.conversationId(), fallback);
+                    approximateObservedAtCount.incrementAndGet();
+                    return fallback;
+                });
+
+                memoryWriter.writeMemories(userId, verification.verified(), provenance, observedAt);
+                LOG.infof("  ✓ Successfully wrote %d memories to namespace: [\"user\", \"%s\", \"cognition.v1\", *]"
+                        + " (observedAt=%s)",
+                    verification.verified().size(), userId, observedAt);
                 LOG.debugf("  ✓ Provenance recorded: conversation=%s, entries=%d, trigger=%s",
                     provenance.conversationId(), provenance.entryIds().size(), provenance.batchTrigger());
             } else {

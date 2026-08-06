@@ -225,11 +225,26 @@ class JobProcessorTest {
         RuntimeException cause = new RuntimeException("Root cause");
         
         // When: Create JobProcessingException
-        JobProcessor.JobProcessingException exception = 
+        JobProcessor.JobProcessingException exception =
             new JobProcessor.JobProcessingException("Processing failed", cause);
 
         // Then: Should preserve message and cause
         assertEquals("Processing failed", exception.getMessage());
         assertEquals(cause, exception.getCause());
+    }
+
+    // -------------------------------------------------------------------------
+    // approximateObservedAtCount counter test (JP-N1)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void approximateObservedAtCountStartsAtZero() {
+        // JP-N1: baseline — freshly constructed processor, no jobs run yet.
+        // Verifies the public accessor is wired correctly and the counter
+        // initialises to zero before any job has been processed.
+        // The increment path (fallback when no entry createdAt is present) is
+        // covered by the end-to-end integration test suite where Arc CDI is live.
+        assertEquals(0L, processor.getApproximateObservedAtCount(),
+            "counter must start at zero before any job is processed");
     }
 }
