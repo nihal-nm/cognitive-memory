@@ -12,15 +12,9 @@ import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
 import io.github.rigazilla.memory.cognition.consolidation.ResolvedCandidate;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.github.rigazilla.memory.cognition.model.Provenance;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.ForwardingClientCall;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
-import io.grpc.CallOptions;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import jakarta.annotation.PostConstruct;
@@ -60,11 +54,7 @@ public class MemoryWriter {
         LOG.infof("Initializing MemoryWriter: %s:%d", grpcHost, grpcPort);
         
         // Create gRPC channel with authentication interceptor
-        channel = ManagedChannelBuilder
-            .forAddress(grpcHost, grpcPort)
-            .usePlaintext()
-            .intercept(new AuthInterceptor(apiKey))
-            .build();
+        channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey);
         
         // Create admin stub for writing memories on behalf of users
         memoriesStub = AdminMemoriesServiceGrpc.newBlockingStub(channel);
@@ -393,33 +383,6 @@ public class MemoryWriter {
         long mostSigBits = buffer.getLong();
         long leastSigBits = buffer.getLong();
         return new UUID(mostSigBits, leastSigBits).toString();
-    }
-    
-    /**
-     * Interceptor that adds authentication headers to all gRPC calls.
-     */
-    private static class AuthInterceptor implements ClientInterceptor {
-        private final String apiKey;
-        
-        AuthInterceptor(String apiKey) {
-            this.apiKey = apiKey;
-        }
-        
-        @Override
-        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
-                MethodDescriptor<ReqT, RespT> method,
-                CallOptions callOptions,
-                io.grpc.Channel next) {
-            return new ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT>(
-                    next.newCall(method, callOptions)) {
-                @Override
-                public void start(Listener<RespT> responseListener, Metadata headers) {
-                    // Add authentication header
-                    headers.put(Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    super.start(responseListener, headers);
-                }
-            };
-        }
     }
     
     /**

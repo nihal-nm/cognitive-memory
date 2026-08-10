@@ -6,14 +6,8 @@ import io.github.chirino.memory.grpc.v1.AdminListEntriesRequest;
 import io.github.chirino.memory.grpc.v1.Channel;
 import io.github.chirino.memory.grpc.v1.Entry;
 import io.github.chirino.memory.grpc.v1.ListEntriesResponse;
-import io.grpc.CallOptions;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.ForwardingClientCall;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -50,11 +44,7 @@ public class TranscriptLoader {
         LOG.infof("Initializing TranscriptLoader: %s:%d", grpcHost, grpcPort);
         
         // Create gRPC channel with authentication interceptor
-        channel = ManagedChannelBuilder
-            .forAddress(grpcHost, grpcPort)
-            .usePlaintext()
-            .intercept(new AuthInterceptor(apiKey))
-            .build();
+        channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey);
 
         // Create admin stub (no on-behalf-of needed, admin has full access)
         entriesStub = AdminEntriesServiceGrpc.newBlockingStub(channel);
@@ -62,33 +52,6 @@ public class TranscriptLoader {
         LOG.info("TranscriptLoader initialized successfully");
     }
     
-    /**
-     * Interceptor that adds authentication headers to all gRPC calls.
-     */
-    private static class AuthInterceptor implements ClientInterceptor {
-        private final String apiKey;
-
-        AuthInterceptor(String apiKey) {
-            this.apiKey = apiKey;
-        }
-
-        @Override
-        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
-                MethodDescriptor<ReqT, RespT> method,
-                CallOptions callOptions,
-                io.grpc.Channel next) {
-            return new ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT>(
-                    next.newCall(method, callOptions)) {
-                @Override
-                public void start(Listener<RespT> responseListener, Metadata headers) {
-                    // Add authentication header
-                    headers.put(Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    super.start(responseListener, headers);
-                }
-            };
-        }
-    }
-
     @PreDestroy
     void cleanup() {
         if (channel != null && !channel.isShutdown()) {

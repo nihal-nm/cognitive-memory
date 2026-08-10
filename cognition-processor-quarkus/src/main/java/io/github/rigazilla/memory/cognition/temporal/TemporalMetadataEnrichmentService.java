@@ -9,10 +9,8 @@ import io.github.chirino.memory.grpc.v1.AdminListMemoriesResponse;
 import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
 import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
-import io.grpc.CallCredentials;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Metadata;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import jakarta.annotation.PostConstruct;
@@ -43,11 +41,6 @@ import java.util.concurrent.atomic.AtomicLong;
 public class TemporalMetadataEnrichmentService {
 
     private static final Logger LOG = Logger.getLogger(TemporalMetadataEnrichmentService.class);
-    private static final Metadata.Key<String> API_KEY_HEADER =
-            Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER);
-    private static final Metadata.Key<String> CLIENT_ID_HEADER =
-            Metadata.Key.of("x-client-id", Metadata.ASCII_STRING_MARSHALLER);
-
     /** Namespace prefix shared by all memories written by the cognition processor. */
     private static final String COGNITION_NS_USER = "user";
 
@@ -106,25 +99,8 @@ public class TemporalMetadataEnrichmentService {
     @PostConstruct
     void init() {
         LOG.infof("Initializing TemporalMetadataEnrichmentService: %s:%d", grpcHost, grpcPort);
-        channel = ManagedChannelBuilder
-            .forAddress(grpcHost, grpcPort)
-            .usePlaintext()
-            .build();
-        CallCredentials credentials = new CallCredentials() {
-            @Override
-            public void applyRequestMetadata(RequestInfo requestInfo,
-                    java.util.concurrent.Executor appExecutor, MetadataApplier applier) {
-                Metadata metadata = new Metadata();
-                metadata.put(API_KEY_HEADER, apiKey);
-                metadata.put(CLIENT_ID_HEADER, clientId);
-                applier.apply(metadata);
-            }
-
-            @Override
-            public void thisUsesUnstableApi() { }
-        };
-        memoriesStub = AdminMemoriesServiceGrpc.newBlockingStub(channel)
-            .withCallCredentials(credentials);
+        channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey, clientId);
+        memoriesStub = AdminMemoriesServiceGrpc.newBlockingStub(channel);
         LOG.info("TemporalMetadataEnrichmentService initialized successfully");
     }
 

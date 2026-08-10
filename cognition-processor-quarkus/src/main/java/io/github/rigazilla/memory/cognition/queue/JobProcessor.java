@@ -12,20 +12,13 @@ import io.github.rigazilla.memory.cognition.consolidation.ResolvedCandidate;
 import io.github.rigazilla.memory.cognition.extraction.DurableExtractionResponse;
 import io.github.rigazilla.memory.cognition.extraction.DurableMemoryExtractor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.github.rigazilla.memory.cognition.model.Provenance;
 import io.github.rigazilla.memory.cognition.resource.LlmRetryHelper;
 import io.github.rigazilla.memory.cognition.verification.DurableMemoryVerifier;
 import io.github.rigazilla.memory.cognition.verification.DurableVerificationResponse;
 import io.github.rigazilla.memory.cognition.writer.MemoryWriter;
-import io.grpc.CallOptions;
-import io.grpc.Channel;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.ForwardingClientCall;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.quarkus.arc.Arc;
@@ -128,45 +121,11 @@ public class JobProcessor {
         LOG.infof("Initializing JobProcessor gRPC clients: %s:%d", grpcHost, grpcPort);
 
         // Create gRPC channel with authentication interceptor
-        channel = ManagedChannelBuilder
-            .forAddress(grpcHost, grpcPort)
-            .usePlaintext()
-            .intercept(new AuthInterceptor(apiKey, clientId))
-            .build();
+        channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey, clientId);
 
         conversationsStub = AdminConversationsServiceGrpc.newBlockingStub(channel);
 
         LOG.info("JobProcessor gRPC clients initialized successfully");
-    }
-
-    /**
-     * Interceptor that adds authentication headers to all gRPC calls.
-     */
-    private static class AuthInterceptor implements ClientInterceptor {
-        private final String apiKey;
-        private final String clientId;
-
-        AuthInterceptor(String apiKey, String clientId) {
-            this.apiKey = apiKey;
-            this.clientId = clientId;
-        }
-
-        @Override
-        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
-                MethodDescriptor<ReqT, RespT> method,
-                CallOptions callOptions,
-                Channel next) {
-            return new ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT>(
-                    next.newCall(method, callOptions)) {
-                @Override
-                public void start(Listener<RespT> responseListener, Metadata headers) {
-                    // Add authentication headers: X-API-Key and X-Client-ID
-                    headers.put(Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    headers.put(Metadata.Key.of("x-client-id", Metadata.ASCII_STRING_MARSHALLER), clientId);
-                    super.start(responseListener, headers);
-                }
-            };
-        }
     }
 
     @PreDestroy

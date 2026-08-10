@@ -8,15 +8,8 @@ import io.github.chirino.memory.grpc.v1.AdminCheckpoint;
 import io.github.chirino.memory.grpc.v1.AdminCheckpointServiceGrpc;
 import io.github.chirino.memory.grpc.v1.GetCheckpointRequest;
 import io.github.chirino.memory.grpc.v1.PutCheckpointRequest;
-import io.grpc.CallOptions;
-import io.grpc.Channel;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.ForwardingClientCall;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import jakarta.annotation.PostConstruct;
@@ -70,46 +63,12 @@ public class CheckpointService {
         LOG.infof("Initializing CheckpointService with gRPC: %s:%d", grpcHost, grpcPort);
 
         // Create gRPC channel with authentication interceptor
-        channel = ManagedChannelBuilder
-            .forAddress(grpcHost, grpcPort)
-            .usePlaintext()
-            .intercept(new AuthInterceptor(apiKey, clientId))
-            .build();
+        channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey, clientId);
 
         // Create blocking stub for synchronous checkpoint operations
         checkpointStub = AdminCheckpointServiceGrpc.newBlockingStub(channel);
 
         LOG.info("CheckpointService initialized successfully");
-    }
-
-    /**
-     * Interceptor that adds authentication headers to all gRPC calls.
-     */
-    private static class AuthInterceptor implements ClientInterceptor {
-        private final String apiKey;
-        private final String clientId;
-
-        AuthInterceptor(String apiKey, String clientId) {
-            this.apiKey = apiKey;
-            this.clientId = clientId;
-        }
-
-        @Override
-        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
-                MethodDescriptor<ReqT, RespT> method,
-                CallOptions callOptions,
-                Channel next) {
-            return new ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT>(
-                    next.newCall(method, callOptions)) {
-                @Override
-                public void start(Listener<RespT> responseListener, Metadata headers) {
-                    // Add authentication headers: X-API-Key and X-Client-ID
-                    headers.put(Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    headers.put(Metadata.Key.of("x-client-id", Metadata.ASCII_STRING_MARSHALLER), clientId);
-                    super.start(responseListener, headers);
-                }
-            };
-        }
     }
 
     /**
