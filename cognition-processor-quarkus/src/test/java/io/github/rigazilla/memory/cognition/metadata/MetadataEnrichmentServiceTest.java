@@ -1,0 +1,562 @@
+package io.github.rigazilla.memory.cognition.metadata;
+
+import com.google.protobuf.Struct;
+import com.google.protobuf.Value;
+import io.github.chirino.memory.grpc.v1.AdminListMemoriesRequest;
+import io.github.chirino.memory.grpc.v1.AdminListMemoriesResponse;
+import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
+import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
+import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
+import io.grpc.ManagedChannel;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests for {@link MetadataEnrichmentService}.
+ *
+ * <p>All gRPC calls are intercepted via a mocked blocking stub; no real network is needed.
+ * The LLM {@link MetadataExtractor} is also mocked so no AI service or CDI container is
+ * required. The test follows the same no-CDI, direct-field-injection pattern used by
+ * {@code TemporalMetadataEnrichmentServiceTest}.
+ *
+ * <p>Coverage:
+ * <ul>
+ *   <li>Counter baselines (processed / enriched / errors all start at 0)</li>
+ *   <li>Happy path: memory without "entities" is enriched and putMemory is called</li>
+ *   <li>Entities and topics are correctly serialised as protobuf ListValue</li>
+ *   <li>expectedRevision is forwarded for optimistic locking</li>
+ *   <li>Idempotency: memory that already has "entities" field is skipped</li>
+ *   <li>Blank content is skipped without calling the extractor</li>
+ *   <li>Pagination: second page is fetched when first response carries a cursor</li>
+ *   <li>Per-item error isolation: failure in one memory does not abort the run</li>
+ *   <li>Counters are reset at the start of startEnrichmentAsync()</li>
+ *   <li>Duplicate-run guard: second call while status=="running" is a no-op</li>
+ *   <li>Empty extractor response (no entities / no topics) still calls putMemory</li>
+ * </ul>
+ */
+class MetadataEnrichmentServiceTest {
+
+    private MetadataEnrichmentService service;
+    private AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub mockStub;
+    private ManagedChannel mockChannel;
+    private MetadataExtractor mockExtractor;
+
+    /** Default extraction response used for most happy-path tests. */
+    private static final MetadataExtractionResponse DEFAULT_RESPONSE = new MetadataExtractionResponse(
+            List.of(new ExtractedEntity("Python", "technology")),
+            List.of("programming/scripting")
+    );
+
+    /** Empty response (no entities / no topics). */
+    private static final MetadataExtractionResponse EMPTY_RESPONSE =
+            new MetadataExtractionResponse(null, null);
+
+    @BeforeEach
+    void setUp() {
+        service = new MetadataEnrichmentService();
+        mockStub = mock(AdminMemoriesServiceGrpc.AdminMemoriesServiceBlockingStub.class);
+        mockChannel = mock(ManagedChannel.class);
+        mockExtractor = mock(MetadataExtractor.class);
+
+        // Inject dependencies without CDI
+        service.memoriesStub = mockStub;
+        service.channel = mockChannel;
+        service.grpcHost = "localhost";
+        service.grpcPort = 8082;
+        service.apiKey = "test-key";
+        service.extractor = mockExtractor;
+
+        when(mockExtractor.extract(any(), any())).thenReturn(DEFAULT_RESPONSE);
+    }
+
+    // -------------------------------------------------------------------------
+    // Counter baselines
+    // -------------------------------------------------------------------------
+
+    @Test
+    void allCountersStartAtZero() {
+        assertEquals(0, service.processed.get());
+        assertEquals(0, service.enriched.get());
+        assertEquals(0, service.errors.get());
+    }
+
+    // -------------------------------------------------------------------------
+    // Happy path
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentCallsPutMemoryForUnenrichedMemory() {
+        AdminMemoryItem item = itemWithContent("key-1", "fact", "User prefers dark mode");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        verify(mockStub).putMemory(any());
+        assertEquals(1, service.processed.get());
+        assertEquals(1, service.enriched.get());
+        assertEquals(0, service.errors.get());
+    }
+
+    @Test
+    void runEnrichmentWritesEntitiesAsListValueOfStructs() {
+        List<ExtractedEntity> entities = List.of(
+                new ExtractedEntity("Python", "technology"),
+                new ExtractedEntity("AWS", "technology"));
+        when(mockExtractor.extract(any(), any())).thenReturn(
+                new MetadataExtractionResponse(entities, List.of()));
+
+        AdminMemoryItem item = itemWithContent("key-ent", "fact", "Used Python on AWS");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+                ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockStub).putMemory(captor.capture());
+
+        Value entitiesValue = captor.getValue().getValue().getFieldsOrThrow("entities");
+        assertEquals(Value.KindCase.LIST_VALUE, entitiesValue.getKindCase(),
+                "entities must be a ListValue");
+        assertEquals(2, entitiesValue.getListValue().getValuesCount(),
+                "entities list must contain exactly 2 items");
+
+        Value firstStruct = entitiesValue.getListValue().getValues(0);
+        assertEquals(Value.KindCase.STRUCT_VALUE, firstStruct.getKindCase(),
+                "each entity must be a Struct");
+        assertEquals("Python",
+                firstStruct.getStructValue().getFieldsOrThrow("name").getStringValue());
+        assertEquals("technology",
+                firstStruct.getStructValue().getFieldsOrThrow("type").getStringValue());
+    }
+
+    @Test
+    void runEnrichmentWritesTopicsAsListValueOfStrings() {
+        List<String> topics = List.of("programming/scripting", "cloud/aws");
+        when(mockExtractor.extract(any(), any())).thenReturn(
+                new MetadataExtractionResponse(List.of(), topics));
+
+        AdminMemoryItem item = itemWithContent("key-top", "fact", "Python on AWS");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+                ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockStub).putMemory(captor.capture());
+
+        Value topicsValue = captor.getValue().getValue().getFieldsOrThrow("topics");
+        assertEquals(Value.KindCase.LIST_VALUE, topicsValue.getKindCase(),
+                "topics must be a ListValue");
+        assertEquals(2, topicsValue.getListValue().getValuesCount());
+        assertEquals("programming/scripting",
+                topicsValue.getListValue().getValues(0).getStringValue());
+        assertEquals("cloud/aws",
+                topicsValue.getListValue().getValues(1).getStringValue());
+    }
+
+    @Test
+    void runEnrichmentForwardsExpectedRevision() {
+        AdminMemoryItem item = itemWithContentAndRevision("key-rev", "fact", "Some content", 42L);
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+                ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockStub).putMemory(captor.capture());
+
+        assertEquals(42L, captor.getValue().getExpectedRevision(),
+                "expectedRevision must match the item's revision to guard concurrent writes");
+    }
+
+    @Test
+    void runEnrichmentPreservesExistingFields() {
+        Struct original = Struct.newBuilder()
+                .putFields("content", Value.newBuilder().setStringValue("existing content").build())
+                .putFields("confidence", Value.newBuilder().setNumberValue(0.95).build())
+                .build();
+        AdminMemoryItem item = itemBuilder("key-preserve", "fact", original).build();
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+                ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockStub).putMemory(captor.capture());
+
+        Struct written = captor.getValue().getValue();
+        assertEquals("existing content",
+                written.getFieldsOrThrow("content").getStringValue(),
+                "pre-existing content field must not be overwritten");
+        assertEquals(0.95,
+                written.getFieldsOrThrow("confidence").getNumberValue(),
+                "pre-existing confidence field must not be overwritten");
+    }
+
+    @Test
+    void runEnrichmentPassesMemoryTypeAndContentToExtractor() {
+        AdminMemoryItem item = itemWithContent("key-type", "preference", "User likes dark mode");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "preference"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        verify(mockExtractor).extract("preference", "User likes dark mode");
+    }
+
+    // -------------------------------------------------------------------------
+    // Idempotency — already-enriched memories must be skipped
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentSkipsMemoryThatAlreadyHasEntities() {
+        Struct alreadyEnriched = Struct.newBuilder()
+                .putFields("content", Value.newBuilder().setStringValue("already done").build())
+                .putFields("entities", Value.newBuilder()
+                        .setListValue(com.google.protobuf.ListValue.newBuilder().build())
+                        .build())
+                .build();
+        AdminMemoryItem item = itemBuilder("key-skip", "fact", alreadyEnriched).build();
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        verify(mockStub, never()).putMemory(any());
+        verify(mockExtractor, never()).extract(any(), any());
+        assertEquals(1, service.processed.get(), "processed must be incremented even for skipped items");
+        assertEquals(0, service.enriched.get());
+    }
+
+    // -------------------------------------------------------------------------
+    // Blank content — must be skipped without calling the extractor
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentSkipsMemoryWithBlankContent() {
+        AdminMemoryItem item = itemWithContent("key-blank", "fact", "   ");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        verify(mockStub, never()).putMemory(any());
+        verify(mockExtractor, never()).extract(any(), any());
+        assertEquals(1, service.processed.get());
+        assertEquals(0, service.enriched.get());
+    }
+
+    @Test
+    void runEnrichmentSkipsMemoryWithMissingContentField() {
+        Struct noContent = Struct.newBuilder().build();
+        AdminMemoryItem item = itemBuilder("key-nocontent", "fact", noContent).build();
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        verify(mockStub, never()).putMemory(any());
+        verify(mockExtractor, never()).extract(any(), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // Empty extractor response — putMemory is still called (empty lists are valid)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentStillCallsPutMemoryWhenExtractorReturnsEmptyResponse() {
+        when(mockExtractor.extract(any(), any())).thenReturn(EMPTY_RESPONSE);
+
+        AdminMemoryItem item = itemWithContent("key-empty", "fact", "Something");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment();
+
+        verify(mockStub).putMemory(any());
+        assertEquals(1, service.enriched.get(),
+                "enrichment with empty extraction is still a write — counter must increment");
+    }
+
+    // -------------------------------------------------------------------------
+    // Namespace filtering — profile_context namespaces must be skipped
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentSkipsProfileContextNamespace() {
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "profile_context"));
+
+        service.runEnrichment();
+
+        // listMemories must never be called because the namespace is filtered out
+        verify(mockStub, never()).listMemories(any());
+        verify(mockExtractor, never()).extract(any(), any());
+    }
+
+    @Test
+    void runEnrichmentSkipsShallowNamespaces() {
+        // Namespaces with fewer than 4 segments must be ignored
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1")); // only 3 segments
+
+        service.runEnrichment();
+
+        verify(mockStub, never()).listMemories(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // Pagination
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentFollowsPaginationCursor() {
+        AdminMemoryItem item1 = itemWithContent("key-p1", "fact", "page 1 content");
+        AdminMemoryItem item2 = itemWithContent("key-p2", "fact", "page 2 content");
+
+        AdminListMemoriesResponse page1 = AdminListMemoriesResponse.newBuilder()
+                .addItems(item1)
+                .setAfterCursor("cursor-abc")
+                .build();
+        AdminListMemoriesResponse page2 = AdminListMemoriesResponse.newBuilder()
+                .addItems(item2)
+                .build();
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(page1).thenReturn(page2);
+
+        service.runEnrichment();
+
+        assertEquals(2, service.processed.get(), "both pages must be processed");
+        assertEquals(2, service.enriched.get(), "both items must be enriched");
+        verify(mockStub, times(2)).listMemories(any());
+    }
+
+    @Test
+    void runEnrichmentPassesCursorToSecondPageRequest() {
+        AdminMemoryItem item = itemWithContent("key-p1", "fact", "content");
+
+        AdminListMemoriesResponse page1 = AdminListMemoriesResponse.newBuilder()
+                .addItems(item)
+                .setAfterCursor("cursor-xyz")
+                .build();
+        AdminListMemoriesResponse page2 = AdminListMemoriesResponse.newBuilder().build();
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(page1).thenReturn(page2);
+
+        service.runEnrichment();
+
+        ArgumentCaptor<AdminListMemoriesRequest> captor =
+                ArgumentCaptor.forClass(AdminListMemoriesRequest.class);
+        verify(mockStub, times(2)).listMemories(captor.capture());
+
+        List<AdminListMemoriesRequest> requests = captor.getAllValues();
+        assertFalse(requests.get(0).hasAfterCursor(), "first request must not have a cursor");
+        assertEquals("cursor-xyz", requests.get(1).getAfterCursor(),
+                "second request must carry the cursor from the first response");
+    }
+
+    // -------------------------------------------------------------------------
+    // Error isolation — per-item failure must not abort the run
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentContinuesAfterPerItemError() {
+        AdminMemoryItem item1 = itemWithContent("key-err1", "fact", "will fail");
+        AdminMemoryItem item2 = itemWithContent("key-ok2", "fact", "will succeed");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(twoItemPage(item1, item2));
+        when(mockStub.putMemory(any()))
+                .thenThrow(new RuntimeException("simulated failure"))
+                .thenReturn(null);
+
+        service.runEnrichment();
+
+        assertEquals(2, service.processed.get());
+        assertEquals(1, service.enriched.get(), "second item must succeed despite first failing");
+        assertEquals(1, service.errors.get(), "failure must increment errors counter");
+    }
+
+    @Test
+    void runEnrichmentIsolatesExtractorFailure() {
+        when(mockExtractor.extract(any(), any()))
+                .thenThrow(new RuntimeException("LLM timeout"));
+
+        AdminMemoryItem item = itemWithContent("key-llm-fail", "fact", "Some content");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        assertDoesNotThrow(() -> service.runEnrichment(),
+                "extractor failure must be caught and not propagate");
+        assertEquals(1, service.errors.get());
+        assertEquals(0, service.enriched.get());
+    }
+
+    // -------------------------------------------------------------------------
+    // startEnrichmentAsync() — duplicate-run guard and counter reset
+    // -------------------------------------------------------------------------
+
+    @Test
+    void startEnrichmentAsyncSkipsWhenAlreadyRunning() {
+        // Force the AtomicBoolean guard to true before calling startEnrichmentAsync
+        service.running.set(true);
+
+        service.startEnrichmentAsync();
+
+        // listNamespaces must never be called — the guard returned immediately
+        verify(mockStub, never()).listNamespaces(any());
+    }
+
+    @Test
+    void runEnrichmentResetsCounters() {
+        // Seed stale values from a previous imaginary run
+        service.processed.set(99);
+        service.enriched.set(88);
+        service.errors.set(77);
+
+        when(mockStub.listNamespaces(any())).thenReturn(emptyNamespacesResponse());
+
+        // Call the synchronous core method directly — same approach as
+        // TemporalMetadataEnrichmentServiceTest.runBackfillResetsCountersAtStart()
+        service.runEnrichment();
+
+        assertEquals(0, service.processed.get(), "processed must be reset at run start");
+        assertEquals(0, service.enriched.get(), "enriched must be reset at run start");
+        assertEquals(0, service.errors.get(), "errors must be reset at run start");
+    }
+
+    @Test
+    void startEnrichmentAsyncSetsStatusToCompletedOnSuccess() throws InterruptedException {
+        when(mockStub.listNamespaces(any())).thenReturn(emptyNamespacesResponse());
+
+        service.startEnrichmentAsync();
+
+        long deadline = System.currentTimeMillis() + 5000;
+        while (!"completed".equals(service.status.get())
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+
+        assertEquals("completed", service.status.get(),
+                "status must be 'completed' after successful run — timed out waiting");
+        assertNotNull(service.lastRunTime.get(), "lastRunTime must be set after completion");
+    }
+
+    // -------------------------------------------------------------------------
+    // Accessor methods
+    // -------------------------------------------------------------------------
+
+    @Test
+    void accessorsReflectCurrentAtomicValues() {
+        service.processed.set(5);
+        service.enriched.set(3);
+        service.errors.set(1);
+
+        assertEquals(5, service.getProcessed());
+        assertEquals(3, service.getEnriched());
+        assertEquals(1, service.getErrors());
+    }
+
+    @Test
+    void getStatusReturnsCurrentStatus() {
+        assertEquals("idle", service.getStatus());
+        service.status.set("running");
+        assertEquals("running", service.getStatus());
+    }
+
+    @Test
+    void getLastRunTimeIsNullBeforeFirstRun() {
+        assertNull(service.getLastRunTime());
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private AdminMemoryItem itemWithContent(String key, String memoryType, String content) {
+        return itemWithContentAndRevision(key, memoryType, content, 1L);
+    }
+
+    private AdminMemoryItem itemWithContentAndRevision(
+            String key, String memoryType, String content, long revision) {
+        Struct struct = Struct.newBuilder()
+                .putFields("content", Value.newBuilder().setStringValue(content).build())
+                .build();
+        return itemBuilder(key, memoryType, struct).setRevision(revision).build();
+    }
+
+    private AdminMemoryItem.Builder itemBuilder(String key, String memoryType, Struct value) {
+        return AdminMemoryItem.newBuilder()
+                .setKey(key)
+                .setValue(value)
+                .setRevision(1L)
+                .addNamespace("user")
+                .addNamespace("user-abc")
+                .addNamespace("cognition.v1")
+                .addNamespace(memoryType);
+    }
+
+    private static io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesResponse
+    namespacesResponse(String... segments) {
+        io.github.chirino.memory.grpc.v1.MemoryNamespace ns =
+                io.github.chirino.memory.grpc.v1.MemoryNamespace.newBuilder()
+                        .addAllSegments(List.of(segments))
+                        .build();
+        return io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesResponse.newBuilder()
+                .addNamespaces(ns)
+                .build();
+    }
+
+    private static io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesResponse
+    emptyNamespacesResponse() {
+        return io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesResponse.newBuilder()
+                .build();
+    }
+
+    private static AdminListMemoriesResponse singlePage(AdminMemoryItem item) {
+        return AdminListMemoriesResponse.newBuilder().addItems(item).build();
+    }
+
+    private static AdminListMemoriesResponse twoItemPage(AdminMemoryItem a, AdminMemoryItem b) {
+        return AdminListMemoriesResponse.newBuilder().addItems(a).addItems(b).build();
+    }
+}
