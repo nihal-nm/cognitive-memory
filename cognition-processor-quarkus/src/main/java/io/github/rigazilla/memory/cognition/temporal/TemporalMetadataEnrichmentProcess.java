@@ -76,18 +76,38 @@ public class TemporalMetadataEnrichmentProcess implements CognitiveProcess {
     @Override
     public ManagedProcessInspection inspect() {
         Map<String, Object> details = new LinkedHashMap<>();
+        
+        // Common fields expected by frontend
+        details.put("mode", "manual_trigger");
+        details.put("lastRunTime",
+            lastStartTime.get() != null ? lastStartTime.get().toString() : "never");
+        details.put("lastRunStatus", lastStatus.get());
+        details.put("lastRunUserId", "system");
+        
+        // Event stream fields (N/A for this process)
+        details.put("eventStreamConnected", false);
+        details.put("eventsAccepted", 0);
+        details.put("activeWindows", 0);
+        details.put("totalQueues", 0);
+        details.put("activeQueues", 0);
+        details.put("pendingJobs", 0);
+        
+        // Process-specific metrics
         details.put("running", enrichmentService.isRunning());
         details.put("lastStartTime",
             lastStartTime.get() != null ? lastStartTime.get().toString() : "never");
         details.put("lastFinishTime",
             lastFinishTime.get() != null ? lastFinishTime.get().toString() : "never");
-        details.put("lastStatus", lastStatus.get());
         details.put("scanned", enrichmentService.getScanned());
         details.put("enriched", enrichmentService.getEnriched());
         details.put("skipped", enrichmentService.getSkipped());
         details.put("conflicts", enrichmentService.getConflicts());
         details.put("errors", enrichmentService.getErrors());
         details.put("approximateObservedAtWrites", jobProcessor.getApproximateObservedAtCount());
+        
+        // Empty resourceTypes (this process doesn't use LLMs)
+        details.put("resourceTypes", Map.of());
+        
         return new ManagedProcessInspection(
             id(),
             displayName(),
