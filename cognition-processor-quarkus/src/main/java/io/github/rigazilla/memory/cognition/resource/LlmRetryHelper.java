@@ -62,12 +62,12 @@ public class LlmRetryHelper {
     public <T> T withRetry(String description, Supplier<T> action) {
         int attempts = maxAttempts < 1 ? 1 : maxAttempts;
         long delayMs = initialDelayMs;
-        Exception lastException = null;
+        RuntimeException lastException = null;
 
         for (int attempt = 1; attempt <= attempts; attempt++) {
             try {
                 return action.get();
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 lastException = e;
                 if (attempt < attempts) {
                     LOG.warnf("LLM call failed [%s] attempt %d/%d: %s — retrying in %dms",
@@ -82,11 +82,12 @@ public class LlmRetryHelper {
         }
 
         // All attempts exhausted — re-throw the last exception.
-        if (lastException instanceof RuntimeException re) {
-            throw re;
+        // lastException is always non-null here: the loop runs at least once (attempts >= 1)
+        // and every iteration either returns or assigns lastException in the catch block.
+        if (lastException == null) {
+            throw new IllegalStateException("withRetry loop exited without result or exception");
         }
-        throw new RuntimeException("LLM call [" + description + "] failed after " + attempts + " attempts",
-                lastException);
+        throw lastException;
     }
 
     private void sleep(long ms) {
