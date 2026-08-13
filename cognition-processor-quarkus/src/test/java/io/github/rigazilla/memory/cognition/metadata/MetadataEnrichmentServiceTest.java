@@ -72,6 +72,10 @@ class MetadataEnrichmentServiceTest {
         service.grpcPort = 8082;
         service.apiKey = "test-key";
         service.extractor = mockExtractor;
+        // Wire a real LlmRetryHelper with 1 attempt (no actual retries) for unit tests.
+        // Tests that specifically exercise retry set maxAttempts directly.
+        service.llmRetryHelper = retryHelperWithAttempts(1);
+        service.interCallDelayMs = 0;
 
         when(mockExtractor.extract(any(), any())).thenReturn(DEFAULT_RESPONSE);
     }
@@ -509,8 +513,84 @@ class MetadataEnrichmentServiceTest {
     }
 
     // -------------------------------------------------------------------------
+    // Retry behaviour
+    // -------------------------------------------------------------------------
+
+    @Test
+    void retryHelperRetriesOnTransientFailureThenSucceeds() {
+        // LLM fails once then succeeds on second attempt.
+        when(mockExtractor.extract(any(), any()))
+                .thenThrow(new RuntimeException("timeout"))
+                .thenReturn(DEFAULT_RESPONSE);
+
+        AdminMemoryItem item = itemWithContent("key-retry", "fact", "Retry test content");
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        // Use a helper with 2 attempts and 0ms delay so the test runs instantly.
+        service.llmRetryHelper = retryHelperWithAttempts(2);
+
+        service.runEnrichment();
+
+        // extractor should have been called twice (first fails, second succeeds).
+        verify(mockExtractor, times(2)).extract(any(), any());
+        verify(mockStub).putMemory(any());
+        assertEquals(1, service.enriched.get());
+        assertEquals(0, service.errors.get());
+    }
+
+    @Test
+    void retryHelperExhaustsAttemptsAndCountsError() {
+        // LLM always fails.
+        when(mockExtractor.extract(any(), any()))
+                .thenThrow(new RuntimeException("always fails"));
+
+        AdminMemoryItem item = itemWithContent("key-fail", "fact", "Will fail");
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        // Use a helper with 2 attempts and 0ms delay.
+        service.llmRetryHelper = retryHelperWithAttempts(2);
+
+        service.runEnrichment();
+
+        // extractor called twice (all attempts exhausted).
+        verify(mockExtractor, times(2)).extract(any(), any());
+        assertEquals(0, service.enriched.get());
+        assertEquals(1, service.errors.get());
+    }
+
+    @Test
+    void interCallDelayIsCalledBetweenItems() {
+        // Two items in the same page; with delay=0 the run still completes without hanging.
+        AdminMemoryItem item1 = itemWithContent("key-d1", "fact", "Item one");
+        AdminMemoryItem item2 = itemWithContent("key-d2", "fact", "Item two");
+
+        when(mockStub.listNamespaces(any())).thenReturn(
+                namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
+        when(mockStub.listMemories(any())).thenReturn(twoItemPage(item1, item2));
+
+        service.interCallDelayMs = 0; // no actual sleep — just verifying the path runs cleanly
+        service.runEnrichment();
+
+        assertEquals(2, service.enriched.get());
+        assertEquals(0, service.errors.get());
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Build a real {@link io.github.rigazilla.memory.cognition.resource.LlmRetryHelper}
+     * with {@code maxAttempts} and 0ms delay so unit tests run instantly.
+     */
+    private static io.github.rigazilla.memory.cognition.resource.LlmRetryHelper retryHelperWithAttempts(int maxAttempts) {
+        return io.github.rigazilla.memory.cognition.resource.LlmRetryHelper
+                .forTesting(maxAttempts, 0L, 0L);
+    }
 
     private AdminMemoryItem itemWithContent(String key, String memoryType, String content) {
         return itemWithContentAndRevision(key, memoryType, content, 1L);

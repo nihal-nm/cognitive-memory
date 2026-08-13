@@ -11,6 +11,7 @@ import io.github.rigazilla.memory.cognition.extraction.DurableExtractionResponse
 import io.github.rigazilla.memory.cognition.extraction.DurableMemoryExtractor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
 import io.github.rigazilla.memory.cognition.model.Provenance;
+import io.github.rigazilla.memory.cognition.resource.LlmRetryHelper;
 import io.github.rigazilla.memory.cognition.verification.DurableMemoryVerifier;
 import io.github.rigazilla.memory.cognition.verification.DurableVerificationResponse;
 import io.github.rigazilla.memory.cognition.writer.MemoryWriter;
@@ -94,6 +95,9 @@ public class JobProcessor {
 
     @Inject
     MemoryWriter memoryWriter;
+
+    @Inject
+    LlmRetryHelper llmRetryHelper;
 
     ManagedChannel channel;
     AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub conversationsStub;
@@ -289,7 +293,9 @@ public class JobProcessor {
                 }
             }
 
-            DurableExtractionResponse extraction = extractor.extract(evidenceText);
+            DurableExtractionResponse extraction = llmRetryHelper.withRetry(
+                    "extraction:" + job.conversationId(),
+                    () -> extractor.extract(evidenceText));
 
             int rawTotal = extraction.getTotalCount();
             List<MemoryCandidate> validCandidates = extraction.getAllCandidates();
@@ -328,7 +334,9 @@ public class JobProcessor {
             LOG.infof("  [3/5] Verifying memory candidates");
             List<MemoryCandidate> allCandidates = validCandidates;
             String candidatesJson = objectMapper.writeValueAsString(allCandidates);
-            DurableVerificationResponse verification = verifier.verify(candidatesJson, evidenceText);
+            DurableVerificationResponse verification = llmRetryHelper.withRetry(
+                    "verification:" + job.conversationId(),
+                    () -> verifier.verify(candidatesJson, evidenceText));
             LOG.infof("  ✓ Verification complete: verified=%d, rejected=%d",
                 verification.verified().size(),
                 verification.rejected().size());

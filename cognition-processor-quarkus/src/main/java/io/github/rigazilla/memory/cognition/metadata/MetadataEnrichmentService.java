@@ -19,6 +19,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
+import io.github.rigazilla.memory.cognition.resource.LlmRetryHelper;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ManagedContext;
 import jakarta.annotation.PostConstruct;
@@ -59,6 +60,12 @@ public class MetadataEnrichmentService {
 
     @Inject
     MetadataExtractor extractor;
+
+    @Inject
+    LlmRetryHelper llmRetryHelper;
+
+    @ConfigProperty(name = "cognition.llm.backfill.inter-call-delay-ms", defaultValue = "0")
+    long interCallDelayMs;
 
     // Package-private for test injection (same pattern as TemporalMetadataEnrichmentService)
     ManagedChannel channel;
@@ -209,6 +216,7 @@ public class MetadataEnrichmentService {
 
             for (AdminMemoryItem item : resp.getItemsList()) {
                 enrichMemory(item, memoryType);
+                sleepInterCallDelay();
             }
 
             cursor = resp.hasAfterCursor() ? resp.getAfterCursor() : null;
@@ -233,8 +241,10 @@ public class MetadataEnrichmentService {
                 return;
             }
 
-            // Call LLM to extract entities and topics
-            MetadataExtractionResponse extraction = extractor.extract(memoryType, content);
+            // Call LLM to extract entities and topics — wrapped with retry/backoff
+            MetadataExtractionResponse extraction = llmRetryHelper.withRetry(
+                    "metadata-extraction:" + item.getKey(),
+                    () -> extractor.extract(memoryType, content));
 
             // Write back: copy all existing fields and add entities + topics
             Struct updatedValue = value.toBuilder()
@@ -273,6 +283,17 @@ public class MetadataEnrichmentService {
             list.addValues(Value.newBuilder().setStructValue(entityStruct).build());
         }
         return Value.newBuilder().setListValue(list.build()).build();
+    }
+
+    private void sleepInterCallDelay() {
+        if (interCallDelayMs <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(interCallDelayMs);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private Value buildTopicsValue(List<String> topics) {
