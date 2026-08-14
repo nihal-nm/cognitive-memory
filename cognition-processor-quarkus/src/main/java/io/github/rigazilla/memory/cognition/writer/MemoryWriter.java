@@ -4,9 +4,13 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.NullValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import io.github.chirino.memory.grpc.v1.AdminListMemoriesRequest;
+import io.github.chirino.memory.grpc.v1.AdminListMemoriesResponse;
+import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
 import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
+import io.github.rigazilla.memory.cognition.consolidation.ResolvedCandidate;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
 import io.github.rigazilla.memory.cognition.model.Provenance;
 import io.grpc.ClientCall;
@@ -17,6 +21,8 @@ import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
 import io.grpc.CallOptions;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -76,83 +82,199 @@ public class MemoryWriter {
     
     /**
      * Write a single memory candidate to memory service.
+     * Always performs a fresh insert with a new UUID key.
      *
-     * @param userId User ID for namespace
-     * @param candidate Memory candidate to write
+     * @param userId     User ID for namespace
+     * @param candidate  Memory candidate to write
      * @param provenance Provenance information for audit and replay
+     * @param observedAt ISO-8601 timestamp when the fact was stated
      * @return Memory write result with ID and metadata
      */
-    public MemoryWriteResult writeMemory(String userId, MemoryCandidate candidate, Provenance provenance,
-            String observedAt) {
+    public MemoryWriteResult writeMemory(String userId, MemoryCandidate candidate,
+            Provenance provenance, String observedAt) {
+        return writeResolved(userId, ResolvedCandidate.fresh(candidate), provenance, observedAt);
+    }
+
+    /**
+     * Write a resolved candidate to memory service.
+     * <p>
+     * If the candidate carries an {@code existingKey} (i.e. it is a merge of a
+     * duplicate) the write is a guarded upsert: {@code AdminPutMemoryRequest} is
+     * issued with the existing key and {@code expected_revision}. On
+     * {@code ABORTED} (optimistic-lock conflict), the existing entry is re-fetched
+     * via {@code AdminListMemories}, re-merged, and retried exactly once. If the
+     * retry also fails the candidate is written as a fresh insert so the job is
+     * never blocked.
+     * <p>
+     * Note: {@code AdminUpdateMemoryRequest} only updates the {@code archived} flag and
+     * cannot update content. {@code AdminPutMemoryRequest.setExpectedRevision()}
+     * is the correct proto field for a guarded upsert — confirmed at proto line 728.
+     *
+     * @param userId     User ID for namespace
+     * @param resolved   Resolved candidate, optionally carrying existing key + revision
+     * @param provenance Provenance information for audit and replay
+     * @param observedAt ISO-8601 timestamp when the fact was stated
+     * @return Memory write result with ID and metadata
+     */
+    public MemoryWriteResult writeResolved(String userId, ResolvedCandidate resolved,
+            Provenance provenance, String observedAt) {
         try {
-            LOG.debugf("Writing memory: type=%s, userId=%s, content='%s'",
-                candidate.type(), userId,
-                candidate.content().length() > 50 ?
-                    candidate.content().substring(0, 47) + "..." :
-                    candidate.content());
+            return doWrite(userId, resolved, provenance, observedAt);
+        } catch (StatusRuntimeException e) {
+            if (e.getStatus().getCode() == Status.Code.ABORTED && resolved.isUpdate()) {
+                // Optimistic-lock conflict: re-fetch current revision and retry once
+                LOG.warnf("ABORTED writing memory key=%s (revision conflict); retrying once",
+                        resolved.existingKey().orElse("?"));
+                return retryAfterAborted(userId, resolved, provenance, observedAt);
+            }
+            LOG.errorf(e, "Failed to write memory: type=%s, userId=%s",
+                    resolved.candidate().type(), userId);
+            throw new MemoryWriteException("Failed to write memory for user " + userId, e);
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to write memory: type=%s, userId=%s",
+                    resolved.candidate().type(), userId);
+            throw new MemoryWriteException("Failed to write memory for user " + userId, e);
+        }
+    }
 
-            // Build namespace: ["user", userId, "cognition.v1", memoryType]
-            List<String> namespace = List.of("user", userId, COGNITION_VERSION, candidate.type());
+    /**
+     * On ABORTED: re-fetch the latest revision for the existing key via
+     * {@code AdminListMemories} and retry the write once.
+     * If the retry also fails, fall back to a fresh insert so the job is never blocked.
+     */
+    private MemoryWriteResult retryAfterAborted(String userId, ResolvedCandidate resolved,
+            Provenance provenance, String observedAt) {
+        try {
+            String existingKey = resolved.existingKey().orElseThrow();
+            List<String> namespace = List.of(
+                    "user", userId, COGNITION_VERSION, resolved.candidate().type());
 
-            // Generate unique key for this memory
-            String key = UUID.randomUUID().toString();
+            // Re-fetch the current revision for the conflicting key
+            AdminListMemoriesRequest refetchRequest = AdminListMemoriesRequest.newBuilder()
+                    .addAllNamespacePrefix(namespace)
+                    .setKeyPrefix(existingKey)
+                    .setLimit(1)
+                    .build();
 
-            // observedAt = when the fact was stated (earliest entry timestamp in the batch)
-            // effectiveAt = defaults to observedAt (can be refined by LLM in a future phase)
-            String effectiveAt = observedAt;
+            AdminListMemoriesResponse refetchResponse = memoriesStub.listMemories(refetchRequest);
 
-            // Build value struct with memory content, metadata, temporal fields, and provenance.
-            // expires_at is null — TTL not yet supported; placeholder for a future phase.
-            Struct value = Struct.newBuilder()
+            if (refetchResponse.getItemsCount() == 0) {
+                // Entry was deleted between our search and retry — treat as fresh insert
+                LOG.warnf("Memory key=%s not found on retry re-fetch; writing as fresh insert", existingKey);
+                return doWrite(userId, ResolvedCandidate.fresh(resolved.candidate()), provenance, observedAt);
+            }
+
+            AdminMemoryItem current = refetchResponse.getItems(0);
+
+            // setKeyPrefix is a prefix scan — validate the returned item is an exact match
+            // to guard against a key that is a prefix of another (e.g. "abc" vs "abcdef").
+            if (!existingKey.equals(current.getKey())) {
+                LOG.warnf("Re-fetch key mismatch: wanted=%s got=%s; writing as fresh insert",
+                        existingKey, current.getKey());
+                return doWrite(userId, ResolvedCandidate.fresh(resolved.candidate()), provenance, observedAt);
+            }
+
+            ResolvedCandidate retryResolved = ResolvedCandidate.merged(
+                    resolved.candidate(), existingKey, current.getRevision());
+
+            MemoryWriteResult result = doWrite(userId, retryResolved, provenance, observedAt);
+            LOG.infof("Retry after ABORTED succeeded: key=%s rev=%d", existingKey, current.getRevision());
+            return result;
+
+        } catch (Exception retryEx) {
+            // Retry also failed — fall back to fresh insert so the job is never blocked
+            LOG.warnf(retryEx,
+                    "Retry after ABORTED also failed for key=%s; falling back to fresh insert",
+                    resolved.existingKey().orElse("?"));
+            return doWrite(userId, ResolvedCandidate.fresh(resolved.candidate()), provenance, observedAt);
+        }
+    }
+
+    /**
+     * Core write logic shared by fresh insert and guarded upsert paths.
+     */
+    private MemoryWriteResult doWrite(String userId, ResolvedCandidate resolved,
+            Provenance provenance, String observedAt) {
+        MemoryCandidate candidate = resolved.candidate();
+
+        LOG.debugf("Writing memory: type=%s, userId=%s, update=%s, content='%s'",
+                candidate.type(), userId, resolved.isUpdate(),
+                candidate.content().length() > 50
+                        ? candidate.content().substring(0, 47) + "..."
+                        : candidate.content());
+
+        List<String> namespace = List.of("user", userId, COGNITION_VERSION, candidate.type());
+
+        // Upsert reuses the existing key; fresh insert generates a new UUID
+        String key = resolved.existingKey().orElseGet(() -> UUID.randomUUID().toString());
+        String effectiveAt = observedAt;
+
+        // Build value struct with memory content, metadata, temporal fields, and provenance.
+        // expires_at is null — TTL not yet supported; placeholder for a future phase.
+        Struct value = Struct.newBuilder()
                 .putFields("content", Value.newBuilder().setStringValue(candidate.content()).build())
                 .putFields("confidence", Value.newBuilder().setNumberValue(candidate.confidence()).build())
                 .putFields("citations", buildCitationsValue(candidate.citations()))
                 .putFields("observed_at", Value.newBuilder().setStringValue(observedAt).build())
                 .putFields("effective_at", Value.newBuilder().setStringValue(effectiveAt).build())
-                .putFields("expires_at", Value.newBuilder().setNullValue(
-                    NullValue.NULL_VALUE).build())
+                .putFields("expires_at", Value.newBuilder().setNullValue(NullValue.NULL_VALUE).build())
                 .putFields("provenance", buildProvenanceValue(provenance))
                 .build();
 
-            AdminPutMemoryRequest request = AdminPutMemoryRequest.newBuilder()
+        AdminPutMemoryRequest.Builder requestBuilder = AdminPutMemoryRequest.newBuilder()
                 .addAllNamespace(namespace)
                 .setKey(key)
                 .setValue(value)
                 .putIndex("content", candidate.content())
                 .putIndex("type", candidate.type())
                 .putIndex("observed_at", observedAt)
-                .putIndex("effective_at", effectiveAt)
-                .build();
+                .putIndex("effective_at", effectiveAt);
 
-            // Call gRPC service
-            MemoryWriteResult result = memoriesStub.putMemory(request);
+        // Set expected_revision for guarded upsert (prevents lost-update conflicts)
+        resolved.expectedRevision().ifPresent(requestBuilder::setExpectedRevision);
 
-            LOG.infof("Memory written successfully: id=%s, type=%s, key=%s",
-                bytesToUuid(result.getId()), candidate.type(), key);
+        MemoryWriteResult result = memoriesStub.putMemory(requestBuilder.build());
 
-            return result;
+        LOG.infof("Memory written successfully: id=%s, type=%s, key=%s, update=%s",
+                bytesToUuid(result.getId()), candidate.type(), key, resolved.isUpdate());
 
-        } catch (Exception e) {
-            LOG.errorf(e, "Failed to write memory: type=%s, userId=%s", candidate.type(), userId);
-            throw new MemoryWriteException("Failed to write memory for user " + userId, e);
-        }
+        return result;
     }
-    
+
+    /**
+     * Write multiple resolved candidates in batch.
+     *
+     * @param userId     User ID for namespace
+     * @param resolved   Resolved candidates from consolidation
+     * @param provenance Provenance information shared by all memories in this batch
+     * @param observedAt ISO-8601 timestamp when the facts were stated
+     * @return List of write results
+     */
+    public List<MemoryWriteResult> writeResolved(String userId,
+            List<ResolvedCandidate> resolved, Provenance provenance, String observedAt) {
+        LOG.infof("Writing %d resolved memories for user %s (observedAt=%s)",
+                resolved.size(), userId, observedAt);
+        return resolved.stream()
+                .map(r -> writeResolved(userId, r, provenance, observedAt))
+                .toList();
+    }
+
     /**
      * Write multiple memory candidates in batch.
+     * Retained for backward compatibility — wraps each candidate as a fresh insert.
      *
-     * @param userId User ID for namespace
+     * @param userId     User ID for namespace
      * @param candidates List of memory candidates to write
      * @param provenance Provenance information shared by all memories in this batch
+     * @param observedAt ISO-8601 timestamp when the facts were stated
      * @return List of write results
      */
     public List<MemoryWriteResult> writeMemories(String userId,
             List<MemoryCandidate> candidates, Provenance provenance, String observedAt) {
         LOG.infof("Writing %d memories for user %s (observedAt=%s)", candidates.size(), userId, observedAt);
-
         return candidates.stream()
-            .map(candidate -> writeMemory(userId, candidate, provenance, observedAt))
-            .toList();
+                .map(candidate -> writeMemory(userId, candidate, provenance, observedAt))
+                .toList();
     }
     
     /**

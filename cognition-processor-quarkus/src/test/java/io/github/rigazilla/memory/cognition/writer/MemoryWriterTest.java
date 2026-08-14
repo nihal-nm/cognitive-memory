@@ -2,9 +2,13 @@ package io.github.rigazilla.memory.cognition.writer;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Struct;
+import io.github.chirino.memory.grpc.v1.AdminListMemoriesRequest;
+import io.github.chirino.memory.grpc.v1.AdminListMemoriesResponse;
+import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
 import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
 import io.github.chirino.memory.grpc.v1.MemoryWriteResult;
+import io.github.rigazilla.memory.cognition.consolidation.ResolvedCandidate;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
 import io.github.rigazilla.memory.cognition.model.Provenance;
 import io.grpc.ManagedChannel;
@@ -380,6 +384,152 @@ class MemoryWriterTest {
             "observed_at must be absent in pre-fix struct");
         assertFalse(valueBefore.containsFields("effective_at"),
             "effective_at must be absent in pre-fix struct");
+    }
+
+    // -------------------------------------------------------------------------
+    // writeResolved — upsert path and ABORTED retry
+    // -------------------------------------------------------------------------
+
+    @Test
+    void testWriteResolved_FreshInsert_GeneratesNewKey() {
+        // Given: fresh resolved candidate (no existing key)
+        String userId = "user-fresh";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "User prefers Python", 0.9, List.of());
+        ResolvedCandidate resolved = ResolvedCandidate.fresh(candidate);
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+                .setId(uuidToBytes(UUID.randomUUID().toString())).build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When
+        writer.writeResolved(userId, resolved, provenance, TEST_OBSERVED_AT);
+
+        // Then: a fresh UUID key used — no expected_revision set
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+                ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+        assertFalse(captor.getValue().hasExpectedRevision(),
+                "fresh insert must not set expected_revision");
+    }
+
+    @Test
+    void testWriteResolved_Upsert_SetsExistingKeyAndRevision() {
+        // Given: merged resolved candidate carrying existing key + revision
+        String userId = "user-upsert";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "User prefers Python", 0.9, List.of());
+        ResolvedCandidate resolved = ResolvedCandidate.merged(candidate, "existing-key-99", 5L);
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult result = MemoryWriteResult.newBuilder()
+                .setId(uuidToBytes(UUID.randomUUID().toString())).build();
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class))).thenReturn(result);
+
+        // When
+        writer.writeResolved(userId, resolved, provenance, TEST_OBSERVED_AT);
+
+        // Then: existing key reused and expected_revision set
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+                ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub).putMemory(captor.capture());
+        assertEquals("existing-key-99", captor.getValue().getKey());
+        assertTrue(captor.getValue().hasExpectedRevision());
+        assertEquals(5L, captor.getValue().getExpectedRevision());
+    }
+
+    @Test
+    void testWriteResolved_Aborted_RetriesWithRefetchedRevision() {
+        // Given: first putMemory throws ABORTED; listMemories returns updated revision; retry succeeds
+        String userId = "user-retry";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "User prefers Python", 0.9, List.of());
+        ResolvedCandidate resolved = ResolvedCandidate.merged(candidate, "key-conflict", 3L);
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult successResult = MemoryWriteResult.newBuilder()
+                .setId(uuidToBytes(UUID.randomUUID().toString())).build();
+
+        // First call throws ABORTED, second (retry) succeeds
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class)))
+                .thenThrow(new StatusRuntimeException(Status.ABORTED))
+                .thenReturn(successResult);
+
+        // Re-fetch returns the item with updated revision 4
+        AdminMemoryItem refetched = AdminMemoryItem.newBuilder()
+                .setKey("key-conflict").setRevision(4).build();
+        when(mockMemoriesStub.listMemories(any(AdminListMemoriesRequest.class)))
+                .thenReturn(AdminListMemoriesResponse.newBuilder().addItems(refetched).build());
+
+        // When
+        MemoryWriteResult result = writer.writeResolved(userId, resolved, provenance, TEST_OBSERVED_AT);
+
+        // Then: result from retry returned; putMemory called twice
+        assertNotNull(result);
+        verify(mockMemoriesStub, times(2)).putMemory(any(AdminPutMemoryRequest.class));
+    }
+
+    @Test
+    void testWriteResolved_AbortedRetryExhausted_FallsBackToFreshInsert() {
+        // Given: both putMemory calls fail — second throws non-ABORTED so fallback triggers
+        String userId = "user-fallback";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "User prefers Python", 0.9, List.of());
+        ResolvedCandidate resolved = ResolvedCandidate.merged(candidate, "key-conflict", 3L);
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult fallbackResult = MemoryWriteResult.newBuilder()
+                .setId(uuidToBytes(UUID.randomUUID().toString())).build();
+
+        // First call throws ABORTED; re-fetch listMemories throws; fallback putMemory succeeds
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class)))
+                .thenThrow(new StatusRuntimeException(Status.ABORTED))
+                .thenReturn(fallbackResult);
+        when(mockMemoriesStub.listMemories(any(AdminListMemoriesRequest.class)))
+                .thenThrow(new RuntimeException("re-fetch failed"));
+
+        // When
+        MemoryWriteResult result = writer.writeResolved(userId, resolved, provenance, TEST_OBSERVED_AT);
+
+        // Then: fallback fresh insert succeeded — job not blocked
+        assertNotNull(result);
+        verify(mockMemoriesStub, times(2)).putMemory(any(AdminPutMemoryRequest.class));
+    }
+
+    @Test
+    void testWriteResolved_Aborted_RefetchKeyMismatch_FallsBackToFreshInsert() {
+        // re-fetch returns an item whose key doesn't exactly match the expected key
+        // (setKeyPrefix is a prefix scan). The writer must fall back to a fresh insert
+        // rather than writing to the wrong key.
+        String userId = "user-keymismatch";
+        MemoryCandidate candidate = new MemoryCandidate("fact", "User prefers Python", 0.9, List.of());
+        ResolvedCandidate resolved = ResolvedCandidate.merged(candidate, "key-abc", 3L);
+        Provenance provenance = createProvenance("conv-1", List.of());
+
+        MemoryWriteResult fallbackResult = MemoryWriteResult.newBuilder()
+                .setId(uuidToBytes(UUID.randomUUID().toString())).build();
+
+        // First putMemory throws ABORTED
+        when(mockMemoriesStub.putMemory(any(AdminPutMemoryRequest.class)))
+                .thenThrow(new StatusRuntimeException(Status.ABORTED))
+                .thenReturn(fallbackResult);
+
+        // Re-fetch returns a DIFFERENT key (prefix match on "key-abc" returned "key-abcdef")
+        AdminMemoryItem wrongItem = AdminMemoryItem.newBuilder()
+                .setKey("key-abcdef").setRevision(4).build();
+        when(mockMemoriesStub.listMemories(any(AdminListMemoriesRequest.class)))
+                .thenReturn(AdminListMemoriesResponse.newBuilder().addItems(wrongItem).build());
+
+        // When
+        MemoryWriteResult result = writer.writeResolved(userId, resolved, provenance, TEST_OBSERVED_AT);
+
+        // Then: falls back to fresh insert (putMemory called twice — once ABORTED, once fresh)
+        assertNotNull(result);
+        verify(mockMemoriesStub, times(2)).putMemory(any(AdminPutMemoryRequest.class));
+
+        // The second (fallback) call must NOT set expected_revision
+        ArgumentCaptor<AdminPutMemoryRequest> captor =
+                ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
+        verify(mockMemoriesStub, times(2)).putMemory(captor.capture());
+        assertFalse(captor.getAllValues().get(1).hasExpectedRevision(),
+                "fallback fresh insert must not carry the wrong key's revision");
     }
 
     // Helper methods

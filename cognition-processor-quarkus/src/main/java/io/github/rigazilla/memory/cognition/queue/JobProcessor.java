@@ -7,6 +7,8 @@ import io.github.chirino.memory.grpc.v1.AdminGetConversationRequest;
 import io.github.rigazilla.memory.cognition.event.ScopeJob;
 import io.github.rigazilla.memory.cognition.evidence.EvidencePack;
 import io.github.rigazilla.memory.cognition.evidence.TranscriptLoader;
+import io.github.rigazilla.memory.cognition.consolidation.ConsolidationService;
+import io.github.rigazilla.memory.cognition.consolidation.ResolvedCandidate;
 import io.github.rigazilla.memory.cognition.extraction.DurableExtractionResponse;
 import io.github.rigazilla.memory.cognition.extraction.DurableMemoryExtractor;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
@@ -42,6 +44,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * Processes jobs from conversation queues on virtual threads.
@@ -52,8 +55,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * 0. Load conversation metadata (to get owner user ID)
  * 1. Load evidence (transcript entries)
  * 2. Extract memory candidates (all 5 types in one LLM call)
- * 3. Verify candidates (check citations)
- * 4. Write verified memories to memory-service
+ * 3. Deduplicate candidates (within-batch + cross-batch exact match)
+ * 4. Verify candidates (check citations)
+ * 5. Write verified memories to memory-service
  *
  * Note: Memories are written to namespace ["user", <conversation_owner>, "cognition.v1", <memory_type>]
  *       where conversation_owner is the owner_user_id from the Conversation metadata.
@@ -98,6 +102,9 @@ public class JobProcessor {
 
     @Inject
     LlmRetryHelper llmRetryHelper;
+
+    @Inject
+    ConsolidationService consolidationService;
 
     ManagedChannel channel;
     AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub conversationsStub;
@@ -258,12 +265,12 @@ public class JobProcessor {
     private void processJobInternal(ScopeJob job, long startTime) {
         try {
             // Stage 0: Load Conversation Metadata
-            LOG.infof("  [0/5] Loading conversation metadata: %s", job.conversationId());
+            LOG.infof("  [0/6] Loading conversation metadata: %s", job.conversationId());
             String userId = getConversationOwner(job.conversationId());
             LOG.infof("  ✓ Conversation owner: %s", userId);
 
             // Stage 1: Load Evidence
-            LOG.infof("  [1/5] Loading transcript for conversation: %s", job.conversationId());
+            LOG.infof("  [1/6] Loading transcript for conversation: %s", job.conversationId());
             EvidencePack evidence = transcriptLoader.loadTranscript(
                 job.conversationId(),
                 job.entryIds(),
@@ -278,7 +285,7 @@ public class JobProcessor {
                 provenance.entryIds().size(), provenance.batchTrigger());
 
             // Stage 2: Extract Memories
-            LOG.infof("  [2/5] Extracting memories from evidence");
+            LOG.infof("  [2/6] Extracting memories from evidence");
             String evidenceText = evidence.formatAsText();
 
             // Debug log: show formatted evidence sent to LLM
@@ -330,10 +337,32 @@ public class JobProcessor {
                 extraction.problemSolutions().size(),
                 extraction.decisions().size());
 
-            // Stage 3: Verify Memories
-            LOG.infof("  [3/5] Verifying memory candidates");
-            List<MemoryCandidate> allCandidates = validCandidates;
-            String candidatesJson = objectMapper.writeValueAsString(allCandidates);
+            // Stage 3: Deduplicate candidates — collapses within-batch duplicates and merges
+            // against existing memories before the expensive verification LLM call
+            LOG.infof("  [3/6] Deduplicating %d candidates for user: %s",
+                    validCandidates.size(), userId);
+            List<ResolvedCandidate> resolvedCandidates =
+                    consolidationService.deduplicate(userId, validCandidates);
+            long updateCount = resolvedCandidates.stream().filter(ResolvedCandidate::isUpdate).count();
+            LOG.infof("  ✓ Deduplication complete: %d → %d candidates (%d updates, %d fresh)",
+                    validCandidates.size(), resolvedCandidates.size(),
+                    updateCount, resolvedCandidates.size() - updateCount);
+
+            // Stage 4: Verify Memories
+            // Extract plain candidates for the verifier (takes JSON string of List<MemoryCandidate>)
+            List<MemoryCandidate> deduplicatedCandidates = resolvedCandidates.stream()
+                    .map(ResolvedCandidate::candidate)
+                    .toList();
+            // Content-keyed lookup so the write stage recovers key/revision after
+            // verification filters down to verified candidates only
+            Map<String, ResolvedCandidate> resolvedByContent = resolvedCandidates.stream()
+                    .collect(Collectors.toMap(
+                            r -> r.candidate().content(),
+                            r -> r,
+                            (a, b) -> a));
+
+            LOG.infof("  [4/6] Verifying memory candidates");
+            String candidatesJson = objectMapper.writeValueAsString(deduplicatedCandidates);
             DurableVerificationResponse verification = llmRetryHelper.withRetry(
                     "verification:" + job.conversationId(),
                     () -> verifier.verify(candidatesJson, evidenceText));
@@ -356,9 +385,9 @@ public class JobProcessor {
                 }
             }
 
-            // Stage 4: Write Memories
+            // Stage 5: Write Memories
             if (!verification.verified().isEmpty()) {
-                LOG.infof("  [4/5] Writing %d verified memories to memory-service for user: %s",
+                LOG.infof("  [5/6] Writing %d verified memories to memory-service for user: %s",
                     verification.verified().size(), userId);
 
                 // observed_at = earliest entry createdAt in this batch (when the facts were stated).
@@ -413,7 +442,18 @@ public class JobProcessor {
                             provenance.entryIds().size());
                     }
 
-                    memoryWriter.writeMemory(userId, candidate, memoryProvenance, observedAt);
+                    // Recover key/revision from dedup stage via exact-content lookup.
+                    // A miss means the verifier's LLM round-trip mutated the content string;
+                    // fall back to fresh insert and warn so the silent data loss is observable.
+                    ResolvedCandidate resolved = resolvedByContent.get(candidate.content());
+                    if (resolved == null) {
+                        LOG.warnf("resolvedByContent miss for verified candidate [%s] — "
+                                + "content may have been mutated by LLM round-trip; "
+                                + "writing as fresh insert (duplicate possible)",
+                                candidate.type());
+                        resolved = ResolvedCandidate.fresh(candidate);
+                    }
+                    memoryWriter.writeResolved(userId, resolved, memoryProvenance, observedAt);
                     writtenCount++;
                 }
 
@@ -421,7 +461,7 @@ public class JobProcessor {
                         + " (observedAt=%s, refined=%d, batch-level=%d)",
                     writtenCount, userId, observedAt, refinedCount, writtenCount - refinedCount);
             } else {
-                LOG.infof("  [4/5] No verified memories to write");
+                LOG.infof("  [5/6] No verified memories to write");
             }
 
             long duration = System.currentTimeMillis() - startTime;

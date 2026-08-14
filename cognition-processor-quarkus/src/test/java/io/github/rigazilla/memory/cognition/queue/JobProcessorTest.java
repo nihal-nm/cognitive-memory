@@ -2,6 +2,7 @@ package io.github.rigazilla.memory.cognition.queue;
 
 import io.github.chirino.memory.grpc.v1.AdminConversation;
 import io.github.chirino.memory.grpc.v1.AdminConversationsServiceGrpc;
+import io.github.rigazilla.memory.cognition.consolidation.ConsolidationService;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
@@ -34,6 +35,7 @@ class JobProcessorTest {
     private JobQueueRegistry registry;
     private AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub conversationsStub;
     private ManagedChannel mockChannel;
+    private ConsolidationService consolidationService;
 
     @BeforeEach
     void setUp() {
@@ -41,11 +43,13 @@ class JobProcessorTest {
         registry = mock(JobQueueRegistry.class);
         conversationsStub = mock(AdminConversationsServiceGrpc.AdminConversationsServiceBlockingStub.class);
         mockChannel = mock(ManagedChannel.class);
+        consolidationService = mock(ConsolidationService.class);
 
         // Inject mocks
         processor.registry = registry;
         processor.conversationsStub = conversationsStub;
         processor.channel = mockChannel;
+        processor.consolidationService = consolidationService;
 
         // Set config
         processor.grpcHost = "localhost";
