@@ -10,15 +10,8 @@ import io.github.chirino.memory.grpc.v1.AdminMemoriesServiceGrpc;
 import io.github.chirino.memory.grpc.v1.AdminMemoryItem;
 import io.github.chirino.memory.grpc.v1.AdminPutMemoryRequest;
 import io.github.chirino.memory.grpc.v1.MemoryNamespace;
-import io.grpc.CallOptions;
-import io.grpc.Channel;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.ForwardingClientCall;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.github.rigazilla.memory.cognition.resource.LlmRetryHelper;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ManagedContext;
@@ -83,10 +76,7 @@ public class MetadataEnrichmentService {
     @PostConstruct
     void init() {
         LOG.infof("Initializing MetadataEnrichmentService: %s:%d", grpcHost, grpcPort);
-        channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort)
-                .usePlaintext()
-                .intercept(new AuthInterceptor(apiKey))
-                .build();
+        channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey);
         memoriesStub = AdminMemoriesServiceGrpc.newBlockingStub(channel);
         LOG.info("MetadataEnrichmentService initialized successfully");
     }
@@ -304,31 +294,4 @@ public class MetadataEnrichmentService {
         return Value.newBuilder().setListValue(list.build()).build();
     }
 
-    /**
-     * Interceptor that adds authentication headers to all gRPC calls.
-     * Same pattern as MemoryWriter and ProfileContextService.
-     */
-    private static class AuthInterceptor implements ClientInterceptor {
-        private final String apiKey;
-
-        AuthInterceptor(String key) {
-            this.apiKey = key;
-        }
-
-        @Override
-        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
-                MethodDescriptor<ReqT, RespT> method, CallOptions opts, Channel next) {
-            return new ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT>(
-                    next.newCall(method, opts)) {
-                @Override
-                public void start(Listener<RespT> listener, Metadata headers) {
-                    headers.put(
-                            Metadata.Key.of("X-API-Key", Metadata.ASCII_STRING_MARSHALLER),
-                            apiKey
-                    );
-                    super.start(listener, headers);
-                }
-            };
-        }
-    }
 }

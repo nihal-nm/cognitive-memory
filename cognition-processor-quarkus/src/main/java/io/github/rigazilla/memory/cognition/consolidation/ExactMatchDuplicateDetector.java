@@ -5,14 +5,8 @@ import io.github.chirino.memory.grpc.v1.AdminSearchMemoriesRequest;
 import io.github.chirino.memory.grpc.v1.AdminSearchMemoriesResponse;
 import io.github.chirino.memory.grpc.v1.MemoryItem;
 import io.github.rigazilla.memory.cognition.extraction.MemoryCandidate;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.ForwardingClientCall;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
-import io.grpc.CallOptions;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import jakarta.annotation.PostConstruct;
@@ -57,11 +51,7 @@ public class ExactMatchDuplicateDetector implements DuplicateDetector {
     @PostConstruct
     void init() {
         LOG.infof("Initializing ExactMatchDuplicateDetector: %s:%d", grpcHost, grpcPort);
-        channel = ManagedChannelBuilder
-                .forAddress(grpcHost, grpcPort)
-                .usePlaintext()
-                .intercept(new AuthInterceptor(apiKey))
-                .build();
+        channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey);
         memoriesStub = AdminMemoriesServiceGrpc.newBlockingStub(channel);
         LOG.info("ExactMatchDuplicateDetector initialized successfully");
     }
@@ -165,28 +155,4 @@ public class ExactMatchDuplicateDetector implements DuplicateDetector {
         }
     }
 
-    /** Adds the API-key authentication header to every gRPC call. */
-    private static class AuthInterceptor implements ClientInterceptor {
-        private final String apiKey;
-
-        AuthInterceptor(String apiKey) {
-            this.apiKey = apiKey;
-        }
-
-        @Override
-        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
-                MethodDescriptor<ReqT, RespT> method,
-                CallOptions callOptions,
-                io.grpc.Channel next) {
-            return new ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT>(
-                    next.newCall(method, callOptions)) {
-                @Override
-                public void start(Listener<RespT> responseListener, Metadata headers) {
-                    headers.put(Metadata.Key.of("X-API-Key",
-                            Metadata.ASCII_STRING_MARSHALLER), apiKey);
-                    super.start(responseListener, headers);
-                }
-            };
-        }
-    }
 }

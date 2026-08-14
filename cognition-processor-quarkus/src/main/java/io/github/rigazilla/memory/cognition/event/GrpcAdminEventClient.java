@@ -4,9 +4,9 @@ import io.github.chirino.memory.grpc.v1.EventNotification;
 import io.github.chirino.memory.grpc.v1.EventScope;
 import io.github.chirino.memory.grpc.v1.EventStreamServiceGrpc;
 import io.github.chirino.memory.grpc.v1.SubscribeEventsRequest;
+import io.github.rigazilla.memory.cognition.grpc.GrpcChannelFactory;
 import io.grpc.CallCredentials;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
 import io.grpc.Metadata;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -131,9 +131,7 @@ public class GrpcAdminEventClient {
             }
 
             // 2. Create gRPC channel
-            channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort)
-                    .usePlaintext() // TODO: Add TLS support in production
-                    .build();
+            channel = GrpcChannelFactory.create(grpcHost, grpcPort, apiKey, clientId);
 
             // 3. Subscribe to admin event stream
             subscribeToEvents(afterCursor);
