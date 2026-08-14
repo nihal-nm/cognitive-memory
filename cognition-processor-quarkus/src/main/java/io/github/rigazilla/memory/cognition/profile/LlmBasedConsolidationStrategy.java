@@ -7,6 +7,7 @@ import com.google.protobuf.ListValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import io.github.chirino.memory.grpc.v1.MemoryItem;
+import io.github.rigazilla.memory.cognition.resource.LlmRetryHelper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -34,7 +35,10 @@ public class LlmBasedConsolidationStrategy implements ProfileConsolidationStrate
     
     @Inject
     ProfileContextConsolidator consolidator;
-    
+
+    @Inject
+    LlmRetryHelper llmRetryHelper;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     @Override
@@ -55,8 +59,10 @@ public class LlmBasedConsolidationStrategy implements ProfileConsolidationStrate
             String memoriesJson = buildMemoriesJson(memories);
             LOG.debugf("Built JSON payload: %d characters", memoriesJson.length());
             
-            // Step 3: Invoke LLM consolidator
-            ProfileConsolidationResponse response = consolidator.consolidate(memoriesJson);
+            // Step 3: Invoke LLM consolidator — wrapped with retry/backoff
+            ProfileConsolidationResponse response = llmRetryHelper.withRetry(
+                    "profile-consolidation:" + userId,
+                    () -> consolidator.consolidate(memoriesJson));
             LOG.infof("LLM consolidation complete for user %s", userId);
             
             // Step 4: Convert to ProfileSnapshot

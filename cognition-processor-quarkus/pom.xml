@@ -107,7 +107,6 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-scheduler</artifactId>
         </dependency>
-        
         <!-- Jackson for Java 8 date/time support -->
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
