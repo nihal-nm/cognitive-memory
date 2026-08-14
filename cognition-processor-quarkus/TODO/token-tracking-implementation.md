@@ -11,6 +11,29 @@ Implement comprehensive token usage tracking for LLM-based cognitive processes t
 3. **Debugging** - Detect anomalies and unexpectedly large token consumption
 4. **Capacity Planning** - Predict infrastructure needs as usage scales
 
+**Prometheus Compatibility**
+
+To enable future Prometheus integration without refactoring, metrics must follow Prometheus naming conventions and support dimensional labels:
+
+- **Naming Convention**: Use snake_case with `_total` suffix for counters
+  - `llm_tokens_input_total` (instead of `inputTokens`)
+  - `llm_tokens_output_total` (instead of `outputTokens`)
+  - `llm_tokens_total` (instead of `totalTokens`)
+  - `llm_requests_total` (instead of `requestCount`)
+
+- **Labels/Dimensions**: Structure data to support these labels for metric filtering and aggregation
+  - `process` - Process ID (e.g., durable-memory-extraction, metadata-enrichment)
+  - `resource` - Resource name (e.g., extractor, verifier)
+  - `provider` - LLM provider (e.g., ollama, openai)
+  - `model` - Model name (e.g., llama3.2, gpt-4)
+
+- **Metric Types**: Use appropriate Prometheus metric types
+  - Token counts and request counts: **Counter** (monotonically increasing)
+  - Average tokens per request: **Gauge** (computed value)
+
+This approach allows seamless Prometheus integration in future phases via Quarkus Micrometer without requiring metric name changes or API response format modifications.
+
+
 ## Phase 1: Process & Resource Level Tracking (Initial Implementation)
 
 ### Scope
