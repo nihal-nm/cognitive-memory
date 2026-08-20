@@ -103,7 +103,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         verify(mockStub).putMemory(any());
         assertEquals(1, service.processed.get());
@@ -125,7 +125,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         ArgumentCaptor<AdminPutMemoryRequest> captor =
                 ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
@@ -158,7 +158,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         ArgumentCaptor<AdminPutMemoryRequest> captor =
                 ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
@@ -182,7 +182,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         ArgumentCaptor<AdminPutMemoryRequest> captor =
                 ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
@@ -204,7 +204,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         ArgumentCaptor<AdminPutMemoryRequest> captor =
                 ArgumentCaptor.forClass(AdminPutMemoryRequest.class);
@@ -227,7 +227,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "preference"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         verify(mockExtractor).extract("preference", "User likes dark mode");
     }
@@ -250,7 +250,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         verify(mockStub, never()).putMemory(any());
         verify(mockExtractor, never()).extract(any(), any());
@@ -270,7 +270,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         verify(mockStub, never()).putMemory(any());
         verify(mockExtractor, never()).extract(any(), any());
@@ -287,7 +287,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         verify(mockStub, never()).putMemory(any());
         verify(mockExtractor, never()).extract(any(), any());
@@ -307,7 +307,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         verify(mockStub).putMemory(any());
         assertEquals(1, service.enriched.get(),
@@ -323,7 +323,7 @@ class MetadataEnrichmentServiceTest {
         when(mockStub.listNamespaces(any())).thenReturn(
                 namespacesResponse("user", "user-abc", "cognition.v1", "profile_context"));
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         // listMemories must never be called because the namespace is filtered out
         verify(mockStub, never()).listMemories(any());
@@ -336,7 +336,7 @@ class MetadataEnrichmentServiceTest {
         when(mockStub.listNamespaces(any())).thenReturn(
                 namespacesResponse("user", "user-abc", "cognition.v1")); // only 3 segments
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         verify(mockStub, never()).listMemories(any());
     }
@@ -362,7 +362,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(page1).thenReturn(page2);
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         assertEquals(2, service.processed.get(), "both pages must be processed");
         assertEquals(2, service.enriched.get(), "both items must be enriched");
@@ -383,7 +383,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(page1).thenReturn(page2);
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         ArgumentCaptor<AdminListMemoriesRequest> captor =
                 ArgumentCaptor.forClass(AdminListMemoriesRequest.class);
@@ -411,7 +411,7 @@ class MetadataEnrichmentServiceTest {
                 .thenThrow(new RuntimeException("simulated failure"))
                 .thenReturn(null);
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         assertEquals(2, service.processed.get());
         assertEquals(1, service.enriched.get(), "second item must succeed despite first failing");
@@ -429,7 +429,7 @@ class MetadataEnrichmentServiceTest {
                 namespacesResponse("user", "user-abc", "cognition.v1", "fact"));
         when(mockStub.listMemories(any())).thenReturn(singlePage(item));
 
-        assertDoesNotThrow(() -> service.runEnrichment(),
+        assertDoesNotThrow(() -> service.runEnrichment(null),
                 "extractor failure must be caught and not propagate");
         assertEquals(1, service.errors.get());
         assertEquals(0, service.enriched.get());
@@ -461,7 +461,7 @@ class MetadataEnrichmentServiceTest {
 
         // Call the synchronous core method directly — same approach as
         // TemporalMetadataEnrichmentServiceTest.runBackfillResetsCountersAtStart()
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         assertEquals(0, service.processed.get(), "processed must be reset at run start");
         assertEquals(0, service.enriched.get(), "enriched must be reset at run start");
@@ -531,7 +531,7 @@ class MetadataEnrichmentServiceTest {
         // Use a helper with 2 attempts and 0ms delay so the test runs instantly.
         service.llmRetryHelper = retryHelperWithAttempts(2);
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         // extractor should have been called twice (first fails, second succeeds).
         verify(mockExtractor, times(2)).extract(any(), any());
@@ -554,7 +554,7 @@ class MetadataEnrichmentServiceTest {
         // Use a helper with 2 attempts and 0ms delay.
         service.llmRetryHelper = retryHelperWithAttempts(2);
 
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         // extractor called twice (all attempts exhausted).
         verify(mockExtractor, times(2)).extract(any(), any());
@@ -573,10 +573,67 @@ class MetadataEnrichmentServiceTest {
         when(mockStub.listMemories(any())).thenReturn(twoItemPage(item1, item2));
 
         service.interCallDelayMs = 0; // no actual sleep — just verifying the path runs cleanly
-        service.runEnrichment();
+        service.runEnrichment(null);
 
         assertEquals(2, service.enriched.get());
         assertEquals(0, service.errors.get());
+    }
+
+    // -------------------------------------------------------------------------
+    // Namespace prefix scoping (Issue #36)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void runEnrichmentWithNullPrefixUsesUserDiscovery() {
+        // null prefix → listNamespaces is called with ["user"] (default behaviour)
+        when(mockStub.listNamespaces(any())).thenReturn(emptyNamespacesResponse());
+
+        service.runEnrichment(null);
+
+        ArgumentCaptor<io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesRequest> captor =
+                ArgumentCaptor.forClass(io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesRequest.class);
+        verify(mockStub).listNamespaces(captor.capture());
+        assertEquals(List.of("user"), captor.getValue().getNamespacePrefixList(),
+                "null prefix must discover under [\"user\"]");
+    }
+
+    @Test
+    void runEnrichmentWith2SegmentPrefixScopesDiscovery() {
+        // 2-segment prefix → listNamespaces called with that prefix (not the default "user")
+        when(mockStub.listNamespaces(any())).thenReturn(emptyNamespacesResponse());
+
+        service.runEnrichment(List.of("user", "caroline"));
+
+        ArgumentCaptor<io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesRequest> captor =
+                ArgumentCaptor.forClass(io.github.chirino.memory.grpc.v1.AdminListMemoryNamespacesRequest.class);
+        verify(mockStub).listNamespaces(captor.capture());
+        assertEquals(List.of("user", "caroline"), captor.getValue().getNamespacePrefixList(),
+                "2-segment prefix must be forwarded to listNamespaces");
+    }
+
+    @Test
+    void runEnrichmentWith4SegmentPrefixSkipsDiscovery() {
+        // 4-segment prefix → listNamespaces must never be called; listMemories is called directly
+        AdminMemoryItem item = itemWithContent("key-direct", "episodic", "Direct access content");
+        when(mockStub.listMemories(any())).thenReturn(singlePage(item));
+
+        service.runEnrichment(List.of("user", "caroline", "cognition.v1", "episodic"));
+
+        verify(mockStub, never()).listNamespaces(any());
+        verify(mockStub).listMemories(any());
+        assertEquals(1, service.enriched.get(),
+                "item must be enriched when a fully-qualified prefix is supplied");
+    }
+
+    @Test
+    void runEnrichmentWith4SegmentProfileContextPrefixSkipsEnrichment() {
+        // 4-segment prefix ending in profile_context → listMemories must never be called
+        service.runEnrichment(List.of("user", "caroline", "cognition.v1", "profile_context"));
+
+        verify(mockStub, never()).listNamespaces(any());
+        verify(mockStub, never()).listMemories(any());
+        assertEquals(0, service.processed.get(),
+                "profile_context namespace must not be enriched even when directly targeted");
     }
 
     // -------------------------------------------------------------------------

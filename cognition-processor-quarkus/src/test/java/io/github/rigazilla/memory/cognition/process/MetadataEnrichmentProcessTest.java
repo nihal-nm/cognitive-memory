@@ -6,6 +6,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -187,12 +189,33 @@ class MetadataEnrichmentProcessTest {
     @Test
     void startDelegatesToStartEnrichmentAsync() {
         process.start();
-        verify(mockService).startEnrichmentAsync();
+        verify(mockService).startEnrichmentAsync(null);
     }
 
     @Test
     void startDoesNotThrow() {
         assertDoesNotThrow(() -> process.start());
+    }
+
+    @Test
+    void startWithPrefixParamPassesPrefixToService() {
+        List<String> prefix = List.of("user", "alice");
+        process.start(Map.of("namespacePrefix", prefix));
+        verify(mockService).startEnrichmentAsync(prefix);
+    }
+
+    @Test
+    void startWithEmptyParamsCallsServiceWithNullPrefix() {
+        process.start(Map.of());
+        verify(mockService).startEnrichmentAsync(null);
+    }
+
+    @Test
+    void noArgStartDelegatesToParamStart() {
+        // no-arg start() must ultimately call startEnrichmentAsync(null), not the no-arg overload
+        process.start();
+        verify(mockService).startEnrichmentAsync(null);
+        verify(mockService, never()).startEnrichmentAsync();
     }
 
     // -------------------------------------------------------------------------

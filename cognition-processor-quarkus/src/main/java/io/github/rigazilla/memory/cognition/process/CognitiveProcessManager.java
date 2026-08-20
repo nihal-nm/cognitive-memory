@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
@@ -26,9 +27,9 @@ public class CognitiveProcessManager {
         return getProcess(processId).inspect();
     }
 
-    public ManagedProcessInspection start(String processId) {
+    public ManagedProcessInspection start(String processId, Map<String, Object> params) {
         CognitiveProcess process = getProcess(processId);
-        process.start();
+        process.start(params);
         return process.inspect();
     }
 

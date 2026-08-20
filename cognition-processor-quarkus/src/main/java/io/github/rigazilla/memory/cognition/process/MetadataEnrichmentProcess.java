@@ -13,6 +13,7 @@ import org.jboss.logging.Logger;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -70,8 +71,15 @@ public class MetadataEnrichmentProcess implements CognitiveProcess {
 
     @Override
     public void start() {
-        LOG.infof("Start requested for process %s", id());
-        enrichmentService.startEnrichmentAsync();
+        start(Map.of());
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void start(Map<String, Object> params) {
+        List<String> prefix = (List<String>) params.get("namespacePrefix");
+        LOG.infof("Start requested for process %s (namespacePrefix=%s)", id(), prefix);
+        enrichmentService.startEnrichmentAsync(prefix);
     }
 
     @Override

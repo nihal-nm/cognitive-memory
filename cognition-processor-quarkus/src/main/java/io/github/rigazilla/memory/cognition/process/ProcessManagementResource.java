@@ -1,6 +1,7 @@
 package io.github.rigazilla.memory.cognition.process;
 
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -10,11 +11,13 @@ import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 @Path("/api/processes")
@@ -50,15 +53,23 @@ public class ProcessManagementResource {
 
     @POST
     @Path("/{id}/start")
+    @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Start a process",
-        description = "Triggers process startup if the process is not already running.")
+        description = "Triggers process startup if the process is not already running. "
+            + "An optional JSON body may be supplied to scope the run; "
+            + "omitting the body preserves existing behaviour (all namespaces).")
     @APIResponse(responseCode = "200", description = "Process started")
     @APIResponse(responseCode = "404", description = "Process not found")
     @APIResponse(responseCode = "501", description = "Operation not supported for this process")
     public ManagedProcessInspection start(
-            @Parameter(description = "Process identifier") @PathParam("id") String processId) {
+            @Parameter(description = "Process identifier") @PathParam("id") String processId,
+            @RequestBody(description = "Optional start parameters", required = false)
+            ProcessStartRequest body) {
+        Map<String, Object> params = body != null && body.namespacePrefix() != null
+                ? Map.of("namespacePrefix", body.namespacePrefix())
+                : Map.of();
         try {
-            return manager.start(processId);
+            return manager.start(processId, params);
         } catch (NoSuchElementException e) {
             throw new WebApplicationException(e.getMessage(), 404);
         } catch (UnsupportedOperationException e) {

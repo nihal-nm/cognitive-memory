@@ -23,6 +23,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -110,17 +111,40 @@ public class MetadataEnrichmentService {
     }
 
     /**
-     * Start enrichment asynchronously so start() does not block.
+     * Start enrichment asynchronously over all user namespaces.
      * Silently skips if a run is already in progress.
      */
     public void startEnrichmentAsync() {
+        startEnrichmentAsync(null);
+    }
+
+    /**
+     * Start enrichment asynchronously, optionally scoped to a namespace prefix.
+     *
+     * <p>When {@code namespacePrefix} is {@code null} the run behaves exactly as
+     * before: all namespaces under {@code ["user"]} are discovered and enriched.
+     *
+     * <p>When a prefix is supplied:
+     * <ul>
+     *   <li>Fewer than 4 segments — namespace discovery is scoped to that prefix.</li>
+     *   <li>Exactly 4 segments — the discovery phase is skipped entirely and
+     *       {@code listMemories} is called directly with the provided prefix.</li>
+     * </ul>
+     *
+     * <p>Silently skips if a run is already in progress.
+     *
+     * @param namespacePrefix optional scoping prefix; {@code null} = all users
+     */
+    public void startEnrichmentAsync(List<String> namespacePrefix) {
         if (!running.compareAndSet(false, true)) {
             LOG.info("Enrichment already running — skipping duplicate start");
             return;
         }
         status.set("running");
 
-        CompletableFuture.runAsync(this::runEnrichment, Executors.newVirtualThreadPerTaskExecutor())
+        CompletableFuture.runAsync(
+                        () -> runEnrichment(namespacePrefix),
+                        Executors.newVirtualThreadPerTaskExecutor())
                 .whenComplete((v, ex) -> {
                     lastRunTime.set(Instant.now());
                     running.set(false);
@@ -134,7 +158,7 @@ public class MetadataEnrichmentService {
     }
 
     // Package-private for direct invocation in unit tests
-    void runEnrichment() {
+    void runEnrichment(List<String> namespacePrefix) {
         processed.set(0);
         enriched.set(0);
         errors.set(0);
@@ -149,7 +173,7 @@ public class MetadataEnrichmentService {
             requestContext.activate();
         }
         try {
-            doRunEnrichment();
+            doRunEnrichment(namespacePrefix);
         } finally {
             if (requestContext != null && requestContext.isActive()) {
                 requestContext.terminate();
@@ -157,35 +181,51 @@ public class MetadataEnrichmentService {
         }
     }
 
-    private void doRunEnrichment() {
+    private void doRunEnrichment(List<String> namespacePrefix) {
         LOG.info("Starting metadata enrichment pass");
 
-        // Discover all namespaces rooted at "user"
-        AdminListMemoryNamespacesRequest nsReq = AdminListMemoryNamespacesRequest.newBuilder()
-                .addNamespacePrefix("user")
-                .setMaxDepth(4)   // segments: user / userId / cognition.v1 / memoryType
-                .build();
-
-        List<MemoryNamespace> namespaces = memoriesStub
-                .listNamespaces(nsReq)
-                .getNamespacesList();
-
-        LOG.infof("Discovered %d namespaces for enrichment", namespaces.size());
-
-        for (MemoryNamespace ns : namespaces) {
-            List<String> segments = ns.getSegmentsList();
-            // Only process 4-segment cognition.v1 namespaces; skip profile_context snapshots
-            if (segments.size() < 4) {
-                continue;
-            }
-            if (!COGNITION_VERSION.equals(segments.get(2))) {
-                continue;
-            }
-            String memoryType = segments.get(3);
+        if (namespacePrefix != null && namespacePrefix.size() >= 4) {
+            // Caller supplied a fully-qualified leaf namespace — skip the two-phase
+            // discovery and call enrichNamespace directly. profile_context is still
+            // filtered because it holds snapshots, not individual memories.
+            String memoryType = namespacePrefix.get(3);
             if (PROFILE_CONTEXT_TYPE.equals(memoryType)) {
-                continue;
+                LOG.infof("Skipping fully-qualified prefix %s — profile_context is not enrichable",
+                        namespacePrefix);
+            } else {
+                LOG.infof("Namespace prefix is fully-qualified (%d segments); skipping discovery",
+                        namespacePrefix.size());
+                enrichNamespace(namespacePrefix, memoryType);
             }
-            enrichNamespace(segments, memoryType);
+        } else {
+            // Phase 1: discover all leaf namespaces under the given (or default) prefix.
+            List<String> prefix = namespacePrefix != null ? namespacePrefix : Collections.singletonList("user");
+            AdminListMemoryNamespacesRequest nsReq = AdminListMemoryNamespacesRequest.newBuilder()
+                    .addAllNamespacePrefix(prefix)
+                    .setMaxDepth(4)   // segments: user / userId / cognition.v1 / memoryType
+                    .build();
+
+            List<MemoryNamespace> namespaces = memoriesStub
+                    .listNamespaces(nsReq)
+                    .getNamespacesList();
+
+            LOG.infof("Discovered %d namespaces for enrichment (prefix=%s)", namespaces.size(), prefix);
+
+            for (MemoryNamespace ns : namespaces) {
+                List<String> segments = ns.getSegmentsList();
+                // Only process 4-segment cognition.v1 namespaces; skip profile_context snapshots
+                if (segments.size() < 4) {
+                    continue;
+                }
+                if (!COGNITION_VERSION.equals(segments.get(2))) {
+                    continue;
+                }
+                String memoryType = segments.get(3);
+                if (PROFILE_CONTEXT_TYPE.equals(memoryType)) {
+                    continue;
+                }
+                enrichNamespace(segments, memoryType);
+            }
         }
 
         LOG.infof("Enrichment pass complete: processed=%d, enriched=%d, errors=%d",
