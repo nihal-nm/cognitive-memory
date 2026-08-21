@@ -1,7 +1,6 @@
 package io.github.rigazilla.memory.cognition.process;
 
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -53,7 +52,6 @@ public class ProcessManagementResource {
 
     @POST
     @Path("/{id}/start")
-    @Consumes(MediaType.APPLICATION_JSON)
     @Operation(summary = "Start a process",
         description = "Triggers process startup if the process is not already running. "
             + "An optional JSON body may be supplied to scope the run; "

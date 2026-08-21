@@ -341,9 +341,6 @@
           },
           "501" : {
             "description" : "Operation not supported for this process"
-          },
-          "400" : {
-            "description" : "Bad Request"
           }
         }
       }

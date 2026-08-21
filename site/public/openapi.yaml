@@ -251,8 +251,6 @@ paths:
           description: Process not found
         "501":
           description: Operation not supported for this process
-        "400":
-          description: Bad Request
 info:
   title: Cognitive Memory API
   version: 1.0.0-SNAPSHOT
