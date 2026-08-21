@@ -27,7 +27,7 @@ public class CognitiveProcessManager {
         return getProcess(processId).inspect();
     }
 
-    public ManagedProcessInspection start(String processId, Map<String, Object> params) {
+    public ManagedProcessInspection start(String processId, Map<String, List<String>> params) {
         CognitiveProcess process = getProcess(processId);
         process.start(params);
         return process.inspect();

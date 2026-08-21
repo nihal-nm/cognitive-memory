@@ -2,6 +2,7 @@ package io.github.rigazilla.memory.cognition.process;
 
 import io.github.rigazilla.memory.cognition.resource.ResourceRequirements;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -37,7 +38,7 @@ public interface CognitiveProcess {
      * @param params arbitrary key/value pairs; processes that recognise specific keys
      *               (e.g. {@code "namespacePrefix"}) will act on them; all others ignore them.
      */
-    default void start(Map<String, Object> params) {
+    default void start(Map<String, List<String>> params) {
         start();
     }
 

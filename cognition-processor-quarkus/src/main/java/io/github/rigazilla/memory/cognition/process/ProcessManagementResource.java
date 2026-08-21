@@ -63,7 +63,7 @@ public class ProcessManagementResource {
             @Parameter(description = "Process identifier") @PathParam("id") String processId,
             @RequestBody(description = "Optional start parameters", required = false)
             ProcessStartRequest body) {
-        Map<String, Object> params = body != null && body.namespacePrefix() != null
+        Map<String, List<String>> params = body != null && body.namespacePrefix() != null
                 ? Map.of("namespacePrefix", body.namespacePrefix())
                 : Map.of();
         try {

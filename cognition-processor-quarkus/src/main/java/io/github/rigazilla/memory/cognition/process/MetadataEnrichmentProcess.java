@@ -75,12 +75,8 @@ public class MetadataEnrichmentProcess implements CognitiveProcess {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public void start(Map<String, Object> params) {
-        // Safe: the only caller (ProcessManagementResource) constructs params via
-        // Map.of("namespacePrefix", body.namespacePrefix()) where body.namespacePrefix()
-        // is already List<String> — enforced by the ProcessStartRequest record type.
-        List<String> prefix = (List<String>) params.get("namespacePrefix");
+    public void start(Map<String, List<String>> params) {
+        List<String> prefix = params.get("namespacePrefix");
         LOG.infof("Start requested for process %s (namespacePrefix=%s)", id(), prefix);
         enrichmentService.startEnrichmentAsync(prefix);
     }

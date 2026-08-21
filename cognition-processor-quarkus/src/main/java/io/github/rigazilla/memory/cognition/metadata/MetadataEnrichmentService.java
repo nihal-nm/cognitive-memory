@@ -190,7 +190,7 @@ public class MetadataEnrichmentService {
             // filtered because it holds snapshots, not individual memories.
             String memoryType = namespacePrefix.get(3);
             if (PROFILE_CONTEXT_TYPE.equals(memoryType)) {
-                LOG.infof("Skipping fully-qualified prefix %s — profile_context is not enrichable",
+                LOG.debugf("Skipping fully-qualified prefix %s — profile_context is not enrichable",
                         namespacePrefix);
             } else {
                 LOG.infof("Namespace prefix is fully-qualified (%d segments); skipping discovery",
