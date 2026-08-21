@@ -51,6 +51,13 @@ components:
       enum:
       - ENABLED
       - DISABLED
+    ProcessStartRequest:
+      type: object
+      properties:
+        namespacePrefix:
+          type: array
+          items:
+            type: string
 tags:
 - name: Event Status
   description: Monitor the gRPC event stream and debounce windows
@@ -215,6 +222,8 @@ paths:
     post:
       summary: Start a process
       description: Triggers process startup if the process is not already running.
+        An optional JSON body may be supplied to scope the run; omitting the body
+        preserves existing behaviour (all namespaces).
       tags:
       - Process Management
       parameters:
@@ -224,6 +233,13 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        description: Optional start parameters
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessStartRequest"
       responses:
         "200":
           description: Process started
@@ -235,6 +251,8 @@ paths:
           description: Process not found
         "501":
           description: Operation not supported for this process
+        "400":
+          description: Bad Request
 info:
   title: Cognitive Memory API
   version: 1.0.0-SNAPSHOT

@@ -68,6 +68,17 @@
       "ManagedProcessState" : {
         "type" : "string",
         "enum" : [ "ENABLED", "DISABLED" ]
+      },
+      "ProcessStartRequest" : {
+        "type" : "object",
+        "properties" : {
+          "namespacePrefix" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
       }
     }
   },
@@ -292,7 +303,7 @@
     "/api/processes/{id}/start" : {
       "post" : {
         "summary" : "Start a process",
-        "description" : "Triggers process startup if the process is not already running.",
+        "description" : "Triggers process startup if the process is not already running. An optional JSON body may be supplied to scope the run; omitting the body preserves existing behaviour (all namespaces).",
         "tags" : [ "Process Management" ],
         "parameters" : [ {
           "description" : "Process identifier",
@@ -303,6 +314,17 @@
             "type" : "string"
           }
         } ],
+        "requestBody" : {
+          "description" : "Optional start parameters",
+          "required" : false,
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProcessStartRequest"
+              }
+            }
+          }
+        },
         "responses" : {
           "200" : {
             "description" : "Process started",
@@ -319,6 +341,9 @@
           },
           "501" : {
             "description" : "Operation not supported for this process"
+          },
+          "400" : {
+            "description" : "Bad Request"
           }
         }
       }
